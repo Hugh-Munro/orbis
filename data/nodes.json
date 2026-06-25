@@ -1,0 +1,8 @@
+[
+  { "id": "SPY", "label": "S&P 500 ETF", "group": "equity" },
+  { "id": "QQQ", "label": "Nasdaq 100 ETF", "group": "equity" },
+  { "id": "GLD", "label": "Gold ETF", "group": "commodity" },
+  { "id": "TLT", "label": "20Y Treasury ETF", "group": "bond" },
+  { "id": "BTC", "label": "Bitcoin", "group": "crypto" },
+  { "id": "OIL", "label": "Crude Oil ETF", "group": "commodity" }
+]

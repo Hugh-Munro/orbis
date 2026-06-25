@@ -1,0 +1,5 @@
+[
+  { "id": "risk-off", "label": "Risk-Off", "assumes": ["GLD", "TLT"], "color": { "bg": "#e0eeea", "border": "#408068", "text": "#1e4a30" } },
+  { "id": "risk-on", "label": "Risk-On", "assumes": ["SPY", "QQQ", "BTC"], "color": { "bg": "#eeedfb", "border": "#8880d0", "text": "#3a3670" } },
+  { "id": "real-assets", "label": "Real Assets", "assumes": ["GLD", "OIL"], "color": { "bg": "#f0e0e8", "border": "#985060", "text": "#5a2020" } }
+]

@@ -1,0 +1,11 @@
+[
+  ["SPY", "QQQ"],
+  ["SPY", "TLT"],
+  ["SPY", "GLD"],
+  ["SPY", "BTC"],
+  ["SPY", "OIL"],
+  ["QQQ", "BTC"],
+  ["GLD", "TLT"],
+  ["GLD", "OIL"],
+  ["TLT", "BTC"]
+]
