@@ -1,0 +1,29 @@
+{
+  "assets": {
+    "SPY":     { "name": "S&P 500 ETF",      "class": "Equity",    "paradigm": "Risk-On",     "return": 0.102,  "vol": 0.171, "maxDrawdown": -0.239 },
+    "QQQ":     { "name": "Nasdaq 100 ETF",   "class": "Equity",    "paradigm": "Risk-On",     "return": 0.118,  "vol": 0.214, "maxDrawdown": -0.326 },
+    "USO":     { "name": "Crude Oil ETF",    "class": "Commodity", "paradigm": "Real Assets", "return": 0.084,  "vol": 0.332, "maxDrawdown": -0.554 },
+    "GLD":     { "name": "Gold ETF",         "class": "Commodity", "paradigm": "Real Assets", "return": 0.071,  "vol": 0.138, "maxDrawdown": -0.182 },
+    "TLT":     { "name": "20Y Treasury ETF", "class": "Bond",      "paradigm": "Risk-Off",    "return": -0.042, "vol": 0.156, "maxDrawdown": -0.468 },
+    "BTC-USD": { "name": "Bitcoin",          "class": "Crypto",    "paradigm": "Risk-On",     "return": 0.285,  "vol": 0.684, "maxDrawdown": -0.769 }
+  },
+  "edges": [
+    { "source": "SPY",     "target": "QQQ",     "correlation":  0.93 },
+    { "source": "SPY",     "target": "USO",     "correlation":  0.28 },
+    { "source": "SPY",     "target": "GLD",     "correlation":  0.05 },
+    { "source": "SPY",     "target": "TLT",     "correlation": -0.42 },
+    { "source": "SPY",     "target": "BTC-USD", "correlation":  0.38 },
+    { "source": "QQQ",     "target": "USO",     "correlation":  0.25 },
+    { "source": "QQQ",     "target": "GLD",     "correlation":  0.02 },
+    { "source": "QQQ",     "target": "TLT",     "correlation": -0.38 },
+    { "source": "QQQ",     "target": "BTC-USD", "correlation":  0.41 },
+    { "source": "USO",     "target": "GLD",     "correlation":  0.18 },
+    { "source": "USO",     "target": "TLT",     "correlation": -0.25 },
+    { "source": "USO",     "target": "BTC-USD", "correlation":  0.22 },
+    { "source": "GLD",     "target": "TLT",     "correlation":  0.31 },
+    { "source": "GLD",     "target": "BTC-USD", "correlation":  0.12 },
+    { "source": "TLT",     "target": "BTC-USD", "correlation": -0.18 }
+  ],
+  "window": "3Y daily log returns (2021-2024)",
+  "computed_at": "2024-01-01"
+}
