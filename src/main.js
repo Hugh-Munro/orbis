@@ -1,14 +1,19 @@
 import { loadCorrelationData, parseGraphData, degreeMap, validateGraphData } from "./data.js";
-import { createGraph, setupGraphEvents } from "./graph.js";
-import { buildSidebar, buildLegend, buildStatsPanel, resetView, setFilter } from "./ui.js";
+import { createGraph, setupGraphEvents, setNodeUniverseVisibility } from "./graph.js";
+import { buildSidebar, buildLegend, buildStatsPanel, buildWeightingPanel, buildUniversePanel, buildPortfolioValuePanel, setPortfolioValueDisplay, resetView, setFilter } from "./ui.js";
 import { setupSearch } from "./search.js";
-import { computePortfolioStats } from "./stats.js";
+import { computePortfolioStats, computeEqualWeights, computeInverseVolWeights } from "./stats.js";
 
 const app = {
   cy: null,
   overlays: null,
   selectedNode: null,
   nodeSize: null,
+  weights: null,
+  selectedTickers: null,
+  portfolioValue: 100000,
+  valueMode: "value",
+  emergentPortfolioValue: 0,
 };
 
 async function init() {
@@ -18,7 +23,6 @@ async function init() {
 
     validateGraphData(nodes, edges);
 
-    // overlays no longer needed — kept on app in case ui.js references it
     app.overlays = {};
 
     const deg = degreeMap(nodes, edges);
@@ -28,8 +32,55 @@ async function init() {
 
     app.cy = createGraph(app, nodes, edges, deg);
 
-    const stats = computePortfolioStats(correlationData);
-    buildStatsPanel(stats);
+    let activeScheme = "equal";
+
+    function refreshStats(weightsOrScheme) {
+      let weights;
+
+      if (weightsOrScheme === "equal" || weightsOrScheme === "inverse-vol") {
+        activeScheme = weightsOrScheme;
+      } else if (weightsOrScheme && typeof weightsOrScheme === "object") {
+        activeScheme = "custom";
+      }
+
+      if (activeScheme === "equal") weights = computeEqualWeights(correlationData, app.selectedTickers);
+      else if (activeScheme === "inverse-vol") weights = computeInverseVolWeights(correlationData, app.selectedTickers);
+      else weights = weightsOrScheme;
+
+      app.weights = weights;
+
+      // Shares mode: portfolio value is emergent from share counts × price.
+      // Any other mode: portfolio value is whatever the user typed in directly.
+      if (app.valueMode === "shares") {
+        app.portfolioValue = app.emergentPortfolioValue || 0;
+        setPortfolioValueDisplay(app.portfolioValue, true);
+      } else {
+        setPortfolioValueDisplay(app.portfolioValue, false);
+      }
+
+      const stats = computePortfolioStats(correlationData, weights);
+      buildStatsPanel(stats);
+
+      if (app.cy) {
+        app.cy.nodes().forEach(node => {
+          const inUniverse = !app.selectedTickers || app.selectedTickers.has(node.id());
+          setNodeUniverseVisibility(node, inUniverse);
+        });
+        app.cy.style().update();
+      }
+    }
+
+    buildPortfolioValuePanel(app, () => {
+      if (app.cy) app.cy.style().update();
+    });
+
+    buildUniversePanel(app, nodes, () => {
+      refreshStats(activeScheme === "custom" ? app.weights : activeScheme);
+      if (app.onUniverseChangeForCustom) app.onUniverseChangeForCustom();
+    });
+
+    refreshStats("equal");
+    buildWeightingPanel(app, correlationData, refreshStats);
 
     setupGraphEvents(app);
     setupSearch(app);

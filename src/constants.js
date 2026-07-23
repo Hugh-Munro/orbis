@@ -1,8 +1,8 @@
 export const GROUP_COLORS = {
-  equity:    { bg: "#ededfc", border: "#6558d3", text: "#2d2560" },
-  bond:      { bg: "#d8f0e8", border: "#2d8a5e", text: "#144530" },
-  commodity: { bg: "#fce8ee", border: "#c0385a", text: "#6a1028" },
-  crypto:    { bg: "#ddeeff", border: "#2060c0", text: "#0a2a60" },
+  equity:    { bg: "#e4e2f0", border: "#4a4ea3", text: "#242660" },
+  bond:      { bg: "#dceae0", border: "#2f7a52", text: "#1c4a32" },
+  commodity: { bg: "#f2e1e1", border: "#9c3d2e", text: "#6a2318" },
+  crypto:    { bg: "#dde6ee", border: "#33628f", text: "#1a3550" },
 };
 
 export const GROUP_LABELS = {
@@ -19,14 +19,17 @@ export const PARADIGM_COLORS = {
 };
 
 export const GRAPH_LAYOUT = {
-  name: "cose",
+  name: "cola",
   animate: true,
-  animationDuration: 900,
-  nodeRepulsion: () => 400000,
-  idealEdgeLength: () => 250,
-  edgeElasticity: () => 45,
-  gravity: 0.15,
-  numIter: 2500,
-  padding: 100,
+  infinite: true,
+  fit: false,
+  nodeSpacing: 45,
+  edgeLength: 340,
+  nodeRepulsion: 60000,
+  gravity: 0.35,
+  dragCoeff: 0.008,
   randomize: true,
+  maxSimulationTime: Infinity,
+  padding: 80,
+  avoidOverlap: true,
 };

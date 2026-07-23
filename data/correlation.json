@@ -1,11 +1,11 @@
 {
   "assets": {
-    "SPY":     { "name": "S&P 500 ETF",      "class": "Equity",    "paradigm": "Risk-On",     "return": 0.102,  "vol": 0.171, "maxDrawdown": -0.239 },
-    "QQQ":     { "name": "Nasdaq 100 ETF",   "class": "Equity",    "paradigm": "Risk-On",     "return": 0.118,  "vol": 0.214, "maxDrawdown": -0.326 },
-    "USO":     { "name": "Crude Oil ETF",    "class": "Commodity", "paradigm": "Real Assets", "return": 0.084,  "vol": 0.332, "maxDrawdown": -0.554 },
-    "GLD":     { "name": "Gold ETF",         "class": "Commodity", "paradigm": "Real Assets", "return": 0.071,  "vol": 0.138, "maxDrawdown": -0.182 },
-    "TLT":     { "name": "20Y Treasury ETF", "class": "Bond",      "paradigm": "Risk-Off",    "return": -0.042, "vol": 0.156, "maxDrawdown": -0.468 },
-    "BTC-USD": { "name": "Bitcoin",          "class": "Crypto",    "paradigm": "Risk-On",     "return": 0.285,  "vol": 0.684, "maxDrawdown": -0.769 }
+    "SPY":     { "name": "S&P 500 ETF",      "class": "Equity",    "paradigm": "Risk-On",     "return": 0.102,  "vol": 0.171, "maxDrawdown": -0.239, "price": 475.31 },
+    "QQQ":     { "name": "Nasdaq 100 ETF",   "class": "Equity",    "paradigm": "Risk-On",     "return": 0.118,  "vol": 0.214, "maxDrawdown": -0.326, "price": 408.71 },
+    "USO":     { "name": "Crude Oil ETF",    "class": "Commodity", "paradigm": "Real Assets", "return": 0.084,  "vol": 0.332, "maxDrawdown": -0.554, "price": 72.15 },
+    "GLD":     { "name": "Gold ETF",         "class": "Commodity", "paradigm": "Real Assets", "return": 0.071,  "vol": 0.138, "maxDrawdown": -0.182, "price": 191.48 },
+    "TLT":     { "name": "20Y Treasury ETF", "class": "Bond",      "paradigm": "Risk-Off",    "return": -0.042, "vol": 0.156, "maxDrawdown": -0.468, "price": 97.22 },
+    "BTC-USD": { "name": "Bitcoin",          "class": "Crypto",    "paradigm": "Risk-On",     "return": 0.285,  "vol": 0.684, "maxDrawdown": -0.769, "price": 42300.00 }
   },
   "edges": [
     { "source": "SPY",     "target": "QQQ",     "correlation":  0.93 },

@@ -9,6 +9,11 @@ import {
   resetInfoPanel,
 } from "./ui.js";
 
+if (window.cytoscape && window.cytoscapeCola && !window.__colaRegistered) {
+  window.cytoscape.use(window.cytoscapeCola);
+  window.__colaRegistered = true;
+}
+
 function colorFor(ele) {
   return GROUP_COLORS[ele.data("group")] || GROUP_COLORS.equity;
 }
@@ -17,18 +22,41 @@ function edgeWidth(correlation) {
   return 0.8 + Math.abs(correlation) * 6;
 }
 
+// High correlation = classy red (concentration risk), low/negative = green (diversification benefit)
 function edgeColor(correlation) {
-  if (correlation >=  0.7) return "#b03060";  // strong positive — deep rose
-  if (correlation >=  0.3) return "#d07090";  // moderate positive — muted pink
-  if (correlation >=  0)   return "#b0b8c8";  // weak positive — cool grey
-  if (correlation >= -0.3) return "#50a890";  // weak negative — teal
-  return "#1a7860";                            // strong negative — deep teal
+  if (correlation >= 0.7) return "#9c3d2e";   // strong positive — deep red
+  if (correlation >= 0.3) return "#c46a52";   // moderate positive — muted red
+  if (correlation >= 0)   return "#b8b4a8";   // weak positive — neutral
+  if (correlation >= -0.3) return "#5c9a6e";  // weak negative — muted green
+  return "#2f7a52";                            // strong negative — deep green
+}
+
+function formatDollars(amount) {
+  if (amount == null) return "";
+  return "$" + Math.round(amount).toLocaleString("en-US");
 }
 
 export function createGraph(app, nodes, edges, deg) {
-  const maxDeg = Math.max(...Object.values(deg)) || 1;
-  const nodeSize = id => 28 + ((deg[id] || 0) / maxDeg) * 24;
+  const nodeIds = nodes.map(n => n.id);
+  const equalFallback = Object.fromEntries(nodeIds.map(id => [id, 1 / nodeIds.length]));
+
+  const nodeSize = id => {
+    const weights = app.weights || equalFallback;
+    const w = weights[id] || 0;
+    const maxW = Math.max(...Object.values(weights)) || 1;
+    const minSize = 30;
+    const maxSize = 96;
+    return minSize + (w / maxW) * (maxSize - minSize);
+  };
   app.nodeSize = nodeSize;
+
+  const nodeDollarLabel = id => {
+    const weights = app.weights || equalFallback;
+    const w = weights[id] || 0;
+    const value = (app.portfolioValue || 0) * w;
+    return formatDollars(value);
+  };
+  app.nodeDollarLabel = nodeDollarLabel;
 
   return window.cytoscape({
     container: document.getElementById("cy"),
@@ -62,58 +90,77 @@ export function createGraph(app, nodes, edges, deg) {
           height: ele => nodeSize(ele.id()),
           "background-color": ele => colorFor(ele).bg,
           "border-color": ele => colorFor(ele).border,
-          "border-width": 2,
-          label: "data(label)",
+          "border-width": 1.5,
+          label: ele => `${ele.data("label")}\n${nodeDollarLabel(ele.id())}`,
           color: ele => colorFor(ele).text,
-          "font-size": 10,
-          "font-family": "Inter, sans-serif",
+          "font-family": "Inter",
+          "font-size": 12,
+          "font-weight": 600,
           "text-valign": "center",
           "text-halign": "center",
           "text-wrap": "wrap",
-          "text-max-width": ele => `${nodeSize(ele.id()) - 10}px`,
+          "text-max-width": ele => `${nodeSize(ele.id()) - 12}px`,
+          "line-height": 1.3,
           "transition-property": "background-color, border-color, border-width, opacity, outline-color, outline-width",
-          "transition-duration": "220ms",
+          "transition-duration": "200ms",
         },
       },
       {
         selector: "node.dimmed",
         style: {
-          "background-color": "#f0efe8",
-          "border-color": "#d0cfc8",
-          color: "#b8b8b0",
-          opacity: 0.45,
+          "background-color": ele => colorFor(ele).bg,
+          "border-color": ele => colorFor(ele).border,
+          opacity: 0.15,
+        },
+      },
+      {
+        selector: "node.focused",
+        style: {
+          "border-width": 2.5,
+          "border-color": ele => colorFor(ele).border,
+          "outline-color": ele => colorFor(ele).border,
+          "outline-width": 8,
+          "outline-opacity": 0.22,
+          opacity: 1,
+          "z-index": 999,
         },
       },
       {
         selector: "node.selected-node",
         style: {
-          "border-width": 3,
+          "border-width": 2.5,
+          "border-color": ele => colorFor(ele).border,
           "outline-color": ele => colorFor(ele).border,
           "outline-width": 8,
-          "outline-opacity": 0.25,
+          "outline-opacity": 0.2,
         },
       },
       {
         selector: "node.neighbour-node",
-        style: { "border-width": 2.5 },
+        style: {
+          "border-width": 2,
+          "border-color": ele => colorFor(ele).border,
+          opacity: 1,
+        },
       },
       {
         selector: "node.highlighted",
         style: {
           "border-color": ele => ele.data("hl_border") || colorFor(ele).border,
-          "border-width": 2.5,
+          "border-width": 2,
           "outline-color": ele => ele.data("hl_border") || colorFor(ele).border,
           "outline-width": 6,
-          "outline-opacity": 0.25,
+          "outline-opacity": 0.2,
         },
       },
       {
         selector: "node.search-match",
         style: {
-          "border-width": 3,
-          "outline-color": "#0f1b2d",
+          "border-width": 2.5,
+          "border-color": ele => colorFor(ele).border,
+          "outline-color": "#1a1a1a",
           "outline-width": 6,
-          "outline-opacity": 0.22,
+          "outline-opacity": 0.18,
           opacity: 1,
         },
       },
@@ -126,34 +173,41 @@ export function createGraph(app, nodes, edges, deg) {
         style: {
           width: ele => ele.data("edgeWidth"),
           "line-color": ele => ele.data("edgeColor"),
-          opacity: 0.7,
+          opacity: 0.55,
           "curve-style": "bezier",
           "transition-property": "line-color, opacity, width",
-          "transition-duration": "220ms",
+          "transition-duration": "200ms",
         },
       },
       {
         selector: "edge.dimmed",
-        style: { opacity: 0.06, width: 0.5 },
+        style: { opacity: 0.04, width: 0.5 },
+      },
+      {
+        selector: "edge.focused",
+        style: {
+          opacity: 0.9,
+          width: ele => ele.data("edgeWidth") + 1,
+        },
       },
       {
         selector: "edge.highlighted",
         style: {
-          opacity: 1,
+          opacity: 0.9,
           width: ele => ele.data("edgeWidth") + 1.5,
         },
       },
       {
         selector: "edge.selected-edge",
         style: {
-          opacity: 1,
+          opacity: 0.9,
           width: ele => ele.data("edgeWidth") + 2,
           "line-color": ele => ele.data("edgeColor"),
         },
       },
       {
         selector: "edge.search-dimmed",
-        style: { opacity: 0.05 },
+        style: { opacity: 0.04 },
       },
     ],
     layout: GRAPH_LAYOUT,
@@ -164,22 +218,80 @@ export function createGraph(app, nodes, edges, deg) {
   });
 }
 
+export function setNodeUniverseVisibility(node, inUniverse) {
+  if (inUniverse) {
+    node.style("display", "element");
+    node.stop();
+    node.animate(
+      { style: { opacity: 1 } },
+      { duration: 200, easing: "ease-out" }
+    );
+  } else {
+    node.stop();
+    node.animate(
+      { style: { opacity: 0 } },
+      {
+        duration: 200,
+        easing: "ease-in",
+        complete: () => node.style("display", "none"),
+      }
+    );
+  }
+}
+
+// Obsidian-style focus for fully-connected graphs: only the target node itself
+// gets highlighted (not "neighbours", since in a complete graph that's everyone).
+// Everything else dims. Connected edges stay visible so you can still trace
+// which correlation belongs to which pair, but other nodes don't falsely light up.
+function applyFocus(app, node) {
+  const cy = app.cy;
+  const keepEdges = node.connectedEdges();
+
+  cy.elements().removeClass("dimmed focused");
+  cy.elements().difference(node.union(keepEdges)).addClass("dimmed");
+  node.addClass("focused");
+  keepEdges.addClass("focused");
+}
+
+function clearFocus(app) {
+  if (!app.cy) return;
+  app.cy.elements().removeClass("dimmed focused");
+}
+
 export function setupGraphEvents(app) {
-  // Node tap
+  app.lockedFocusNode = null;
+
+  app.cy.on("mouseover", "node", event => {
+    document.body.style.cursor = "pointer";
+    if (app.lockedFocusNode) return;
+    applyFocus(app, event.target);
+  });
+
+  app.cy.on("mouseout", "node", () => {
+    document.body.style.cursor = "default";
+    if (app.lockedFocusNode) return;
+    clearFocus(app);
+  });
+
   app.cy.on("tap", "node", event => {
     const node = event.target;
     const data = node.data();
+
+    if (app.lockedFocusNode && app.lockedFocusNode.id() === node.id()) {
+      app.lockedFocusNode = null;
+      clearFocus(app);
+    } else {
+      app.lockedFocusNode = node;
+      applyFocus(app, node);
+    }
+
     app.selectedNode = node;
     app.selectedEdge = null;
-    clearSelectionClasses(app);
-    node.addClass("selected-node");
     node.connectedEdges().addClass("selected-edge");
-    node.neighborhood("node").addClass("neighbour-node");
     showCard(app, data, node);
     updateInfoPanel(data, node, app);
   });
 
-  // Edge tap
   app.cy.on("tap", "edge", event => {
     const edge = event.target;
     app.selectedEdge = edge;
@@ -187,8 +299,6 @@ export function setupGraphEvents(app) {
     clearSelectionClasses(app);
     hideCard(app);
     edge.addClass("selected-edge");
-    edge.source().addClass("neighbour-node");
-    edge.target().addClass("neighbour-node");
     updateEdgeInfoPanel(edge);
   });
 
@@ -196,13 +306,13 @@ export function setupGraphEvents(app) {
     if (app.selectedNode) positionCardForNode(app, app.selectedNode);
   });
 
-  app.cy.on("mouseover", "node", () => { document.body.style.cursor = "pointer"; });
-  app.cy.on("mouseout", "node", () => { document.body.style.cursor = "default"; });
   app.cy.on("mouseover", "edge", () => { document.body.style.cursor = "pointer"; });
   app.cy.on("mouseout", "edge", () => { document.body.style.cursor = "default"; });
 
   app.cy.on("tap", event => {
     if (event.target === app.cy) {
+      app.lockedFocusNode = null;
+      clearFocus(app);
       clearSelectionClasses(app);
       hideCard(app);
       resetInfoPanel();
