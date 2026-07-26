@@ -283,9 +283,12 @@ export function setupGraphEvents(app) {
     if (app.lockedFocusNode && app.lockedFocusNode.id() === node.id()) {
       app.lockedFocusNode = null;
       clearFocus(app);
+      node.unlock();
     } else {
+      if (app.lockedFocusNode) app.lockedFocusNode.unlock();
       app.lockedFocusNode = node;
       applyFocus(app, node);
+      node.lock();
     }
     app.selectedNode = node;
     app.selectedEdge = null;
@@ -313,7 +316,10 @@ export function setupGraphEvents(app) {
 
   app.cy.on("tap", event => {
     if (event.target === app.cy) {
-      app.lockedFocusNode = null;
+      if (app.lockedFocusNode) {
+        app.lockedFocusNode.unlock();
+        app.lockedFocusNode = null;
+      }
       clearFocus(app);
       clearSelectionClasses(app);
       hideCard(app);

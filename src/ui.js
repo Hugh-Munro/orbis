@@ -9,7 +9,6 @@ function formatDollars(amount) {
   return "$" + Math.round(amount).toLocaleString("en-US");
 }
 
-// Build paradigm filter buttons from live node data
 export function buildSidebar(app, nodes) {
   const container = document.getElementById("filters");
   container.querySelectorAll(".pf-btn:not([data-filter='none'])").forEach(b => b.remove());
@@ -46,8 +45,6 @@ export function buildLegend() {
   });
 }
 
-// Total portfolio value input — parses "$" and commas, stores a clean number on app.portfolioValue.
-// In "shares" mode this field becomes read-only and shows the emergent total instead.
 export function buildPortfolioValuePanel(app, onValueChange) {
   const input = document.getElementById("portfolio-value-input");
   if (!input) return;
@@ -59,7 +56,7 @@ export function buildPortfolioValuePanel(app, onValueChange) {
   }
 
   function commit() {
-    if (app.valueMode === "shares") return; // read-only while shares drive value
+    if (app.valueMode === "shares") return;
     const value = parseValue(input.value);
     app.portfolioValue = value;
     input.value = value ? Math.round(value).toLocaleString("en-US") : "";
@@ -74,7 +71,6 @@ export function buildPortfolioValuePanel(app, onValueChange) {
   });
 }
 
-// Reflect an emergent total (from shares mode) into the portfolio value input, read-only
 export function setPortfolioValueDisplay(value, readOnly) {
   const input = document.getElementById("portfolio-value-input");
   if (!input) return;
@@ -83,8 +79,6 @@ export function setPortfolioValueDisplay(value, readOnly) {
   input.classList.toggle("pv-readonly", !!readOnly);
 }
 
-// Investable universe checklist — controls which assets are eligible for allocation.
-// Collapsible: header click toggles the list open/closed.
 export function buildUniversePanel(app, nodes, onUniverseChange) {
   const container = document.getElementById("universe-list");
   const header = document.getElementById("universe-header");
@@ -123,16 +117,14 @@ export function buildUniversePanel(app, nodes, onUniverseChange) {
   }
 }
 
-// Weighting scheme tabs + custom weight sliders + shares mode.
-// Custom tab now has two sub-modes: "weights" (drag % sliders) and "shares" (enter share counts).
 export function buildWeightingPanel(app, correlationData, onWeightsChange) {
   const tabs = document.querySelectorAll(".wt-tab");
   const customWrap = document.getElementById("custom-weights-wrap");
   const modeToggle = document.getElementById("custom-mode-toggle");
   const allTickers = Object.keys(correlationData.assets);
 
-  app.valueMode = "value"; // "value" (weights drive $) or "shares" (share counts drive $)
-  let customMode = "weights"; // "weights" | "shares"
+  app.valueMode = "value";
+  let customMode = "weights";
 
   function activeTickers() {
     return allTickers.filter(t => !app.selectedTickers || app.selectedTickers.has(t));
@@ -168,7 +160,7 @@ export function buildWeightingPanel(app, correlationData, onWeightsChange) {
     const raw = {};
     let total = 0;
     customWrap.querySelectorAll(".weight-slider").forEach(slider => {
-      if (!tickers.includes(slider.dataset.ticker)) return; // ignore stale sliders
+      if (!tickers.includes(slider.dataset.ticker)) return;
       const v = Number(slider.value);
       raw[slider.dataset.ticker] = v;
       total += v;
@@ -266,8 +258,6 @@ export function buildWeightingPanel(app, correlationData, onWeightsChange) {
       attachModeToggleListeners();
       const slidersWrap = document.getElementById("custom-sliders-wrap");
       const equalStart = Object.fromEntries(tickers.map(t => [t, 1 / tickers.length]));
-      const originalWrap = customWrap;
-      // Render sliders into the nested wrap so the mode-toggle header persists above them
       const tempDiv = document.createElement("div");
       tempDiv.innerHTML = tickers.map(t => {
         const name = correlationData.assets[t].name;
@@ -294,8 +284,6 @@ export function buildWeightingPanel(app, correlationData, onWeightsChange) {
     }
   }
 
-  // Re-render whichever custom sub-view is active whenever the universe changes,
-  // so deselected assets disappear from the list instead of producing stale/NaN rows.
   app.onUniverseChangeForCustom = () => {
     if (document.querySelector('.wt-tab[data-scheme="custom"]').classList.contains("active")) {
       renderCustomTab();
@@ -382,7 +370,7 @@ export function updateInfoPanel(data, node, app) {
     <div style="margin-top:8px;font-size:13px;font-weight:700;color:#1a1a1a">${formatDollars(dollarAmount)}</div>
     <div style="font-size:11px;color:#888">${(weight * 100).toFixed(1)}% allocation</div>
     <div style="margin-top:10px;border-top:1px solid #e8e8e0;padding-top:8px">
-      <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.06em;color:#aaa;margin-bottom:4px">Correlations</div>
+      <div style="font-size:10px;color:#aaa;margin-bottom:4px">Correlations</div>
       ${correlationRows}
     </div>
   `;
@@ -396,10 +384,10 @@ export function updateEdgeInfoPanel(edge) {
   const abs = Math.abs(corr);
 
   let interpretation = "";
-  if (abs >= 0.7)      interpretation = corr > 0 ? "Strong positive — these assets move together closely." : "Strong negative — these assets move in opposite directions.";
-  else if (abs >= 0.4) interpretation = corr > 0 ? "Moderate positive correlation." : "Moderate negative — useful diversification.";
-  else if (abs >= 0.2) interpretation = "Weak correlation — largely independent.";
-  else                 interpretation = "Near-zero correlation — effectively uncorrelated.";
+  if (abs >= 0.7)       interpretation = corr > 0 ? "Strong positive — these assets move together closely." : "Strong negative — these assets move in opposite directions.";
+  else if (abs >= 0.4)  interpretation = corr > 0 ? "Moderate positive correlation." : "Moderate negative — useful diversification.";
+  else if (abs >= 0.2)  interpretation = "Weak correlation — largely independent.";
+  else                  interpretation = "Near-zero correlation — effectively uncorrelated.";
 
   document.getElementById("info-content").innerHTML = `
     <strong style="font-size:13px">${source} / ${target}</strong>
@@ -500,14 +488,77 @@ export function positionCardForNode(app, node) {
 
 export function showCard(app, data, node) {
   const card = document.getElementById("fc");
+  const colors = GROUP_COLORS[data.group] || GROUP_COLORS.equity;
+
   document.getElementById("fc-name").textContent = data.label;
-  document.getElementById("fc-group").textContent = `${data.assetClass} · ${data.paradigm}`;
-  document.getElementById("fc-desc").textContent = "";
-  document.getElementById("fc-origin").textContent = data.id;
-  document.getElementById("fc-year").textContent = "—";
+  document.getElementById("fc-ticker").textContent = data.id;
+
+  const pill = document.getElementById("fc-pill");
+  pill.textContent = data.paradigm;
+  pill.style.background = colors.bg;
+  pill.style.color = colors.text;
+  pill.style.borderColor = colors.border;
+
   const weight = (app.weights && app.weights[data.id]) || 0;
   const dollarAmount = (app.portfolioValue || 0) * weight;
-  document.getElementById("fc-figures").textContent = formatDollars(dollarAmount);
+  document.getElementById("fc-allocation").innerHTML =
+    `<span class="fc-alloc-amount">${formatDollars(dollarAmount)}</span>` +
+    `<span class="fc-alloc-pct">${(weight * 100).toFixed(1)}%</span>`;
+
+  const asset = app.correlationData?.assets?.[data.id];
+  const miniGrid = document.getElementById("fc-mini-grid");
+  if (asset) {
+    const fmt = v => Number.isFinite(v) ? (v * 100).toFixed(1) + "%" : "—";
+    const fmtRatio = v => Number.isFinite(v) ? v.toFixed(2) : "—";
+    const pos = "#2d8a5e";
+    const neg = "#c0385a";
+    const neu = "#888";
+    miniGrid.innerHTML = `
+      <div class="fc-stat">
+        <div class="fc-stat-label">Ann. return</div>
+        <div class="fc-stat-val" style="color:${asset.return >= 0 ? pos : neg}">
+          ${asset.return >= 0 ? "+" : ""}${fmt(asset.return)}
+        </div>
+      </div>
+      <div class="fc-stat">
+        <div class="fc-stat-label">Volatility</div>
+        <div class="fc-stat-val" style="color:${neu}">${fmt(asset.vol)}</div>
+      </div>
+      <div class="fc-stat">
+        <div class="fc-stat-label">Max drawdown</div>
+        <div class="fc-stat-val" style="color:${neg}">${fmt(asset.maxDrawdown)}</div>
+      </div>
+      <div class="fc-stat">
+        <div class="fc-stat-label">Sharpe</div>
+        <div class="fc-stat-val" style="color:${(asset.sharpe || 0) >= 1 ? pos : neg}">
+          ${fmtRatio(asset.sharpe)}
+        </div>
+      </div>
+    `;
+  } else {
+    miniGrid.innerHTML = "";
+  }
+
+  const corrSection = document.getElementById("fc-corr-section");
+  const edges = app.cy.edges().filter(e =>
+    e.source().id() === data.id || e.target().id() === data.id
+  );
+  if (edges.length) {
+    const rows = edges.map(e => {
+      const other = e.source().id() === data.id ? e.target() : e.source();
+      const corr = e.data("correlation");
+      const sign = corr >= 0 ? "+" : "";
+      const col = corr >= 0.5 ? "#9c3d2e" : corr >= 0 ? "#b8b4a8" : "#2f7a52";
+      return `<div class="fc-corr-row">
+        <span class="fc-corr-name">${other.data("label")}</span>
+        <span class="fc-corr-val" style="color:${col}">${sign}${corr.toFixed(2)}</span>
+      </div>`;
+    }).join("");
+    corrSection.innerHTML = `<div class="fc-corr-label">Correlations</div>${rows}`;
+  } else {
+    corrSection.innerHTML = "";
+  }
+
   card.classList.add("visible");
   positionCardForNode(app, node);
 }
@@ -526,37 +577,37 @@ export function buildStatsPanel(stats) {
   }
 
   function color(val) {
-    if (!Number.isFinite(val)) return "#a0a8b0"; // neutral grey — no data yet
+    if (!Number.isFinite(val)) return "#a0a8b0";
     return val >= 0 ? "#2d8a5e" : "#c0385a";
   }
 
   const rows = [
     {
-      label: "Ann. Return",
+      label: "Ann. return",
       value: fmtPercent(stats.portfolioReturn),
       color: color(stats.portfolioReturn),
-      tooltip: "Portfolio annualised return (2021-2024), per selected weighting",
+      tooltip: "Portfolio annualised return per selected weighting",
     },
     {
-      label: "Ann. Volatility",
+      label: "Ann. volatility",
       value: Number.isFinite(stats.portfolioVol) ? (stats.portfolioVol * 100).toFixed(1) + "%" : "—",
       color: "#555",
       tooltip: "Portfolio annualised volatility (√wᵀΣw)",
     },
     {
-      label: "Sharpe Ratio",
+      label: "Sharpe ratio",
       value: fmtRatio(stats.sharpe),
       color: color(Number.isFinite(stats.sharpe) ? stats.sharpe - 1 : NaN),
       tooltip: "Sharpe = (Return − Rf) / Vol, Rf = 5.25%",
     },
     {
-      label: "Sortino Ratio",
+      label: "Sortino ratio",
       value: fmtRatio(stats.sortino),
       color: color(Number.isFinite(stats.sortino) ? stats.sortino - 1 : NaN),
       tooltip: "Sortino = (Return − Rf) / Downside Vol",
     },
     {
-      label: "Avg Correlation",
+      label: "Avg correlation",
       value: fmtRatio(stats.avgCorrelation),
       color: Number.isFinite(stats.avgCorrelation)
         ? (stats.avgCorrelation > 0.5 ? "#c0385a" : "#2d8a5e")
@@ -564,17 +615,17 @@ export function buildStatsPanel(stats) {
       tooltip: "Mean pairwise correlation across all asset pairs",
     },
     {
-      label: "Max Drawdown",
+      label: "Max drawdown",
       value: Number.isFinite(stats.maxDrawdown) ? (stats.maxDrawdown * 100).toFixed(1) + "%" : "—",
       color: "#c0385a",
-      tooltip: "Weighted avg of individual asset max drawdowns (2021-2024)",
+      tooltip: "Weighted avg of individual asset max drawdowns",
     },
   ];
 
   container.innerHTML = rows.map(row => `
-      <div class="stat-item" title="${row.tooltip}">
-        <div class="stat-label">${row.label}</div>
-        <div class="stat-value" style="color:${row.color}">${row.value}</div>
-      </div>
-    `).join("");
+    <div class="stat-item" title="${row.tooltip}">
+      <div class="stat-label">${row.label}</div>
+      <div class="stat-value" style="color:${row.color}">${row.value}</div>
+    </div>
+  `).join("");
 }
