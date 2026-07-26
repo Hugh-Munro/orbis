@@ -1,4 +1,4 @@
-import { GROUP_COLORS, GRAPH_LAYOUT } from "./constants.js";
+import { GROUP_COLORS, GRAPH_LAYOUT_BASE } from "./constants.js";
 import {
   clearSelectionClasses,
   showCard,
@@ -22,13 +22,19 @@ function edgeWidth(correlation) {
   return 0.8 + Math.abs(correlation) * 6;
 }
 
-// High correlation = classy red (concentration risk), low/negative = green (diversification benefit)
+function edgeLengthFor(correlation) {
+  const minLen = 160;
+  const maxLen = 420;
+  const t = (1 - correlation) / 2;
+  return minLen + t * (maxLen - minLen);
+}
+
 function edgeColor(correlation) {
-  if (correlation >= 0.7) return "#9c3d2e";   // strong positive — deep red
-  if (correlation >= 0.3) return "#c46a52";   // moderate positive — muted red
-  if (correlation >= 0)   return "#b8b4a8";   // weak positive — neutral
-  if (correlation >= -0.3) return "#5c9a6e";  // weak negative — muted green
-  return "#2f7a52";                            // strong negative — deep green
+  if (correlation >= 0.7) return "#9c3d2e";
+  if (correlation >= 0.3) return "#c46a52";
+  if (correlation >= 0)   return "#b8b4a8";
+  if (correlation >= -0.3) return "#5c9a6e";
+  return "#2f7a52";
 }
 
 function formatDollars(amount) {
@@ -94,12 +100,12 @@ export function createGraph(app, nodes, edges, deg) {
           label: ele => `${ele.data("label")}\n${nodeDollarLabel(ele.id())}`,
           color: ele => colorFor(ele).text,
           "font-family": "Inter",
-          "font-size": 12,
+          "font-size": ele => Math.min(13, Math.max(8, nodeSize(ele.id()) * 0.18)),
           "font-weight": 600,
           "text-valign": "center",
           "text-halign": "center",
           "text-wrap": "wrap",
-          "text-max-width": ele => `${nodeSize(ele.id()) - 12}px`,
+          "text-max-width": ele => `${nodeSize(ele.id()) - 8}px`,
           "line-height": 1.3,
           "transition-property": "background-color, border-color, border-width, opacity, outline-color, outline-width",
           "transition-duration": "200ms",
@@ -210,7 +216,10 @@ export function createGraph(app, nodes, edges, deg) {
         style: { opacity: 0.04 },
       },
     ],
-    layout: GRAPH_LAYOUT,
+    layout: {
+      ...GRAPH_LAYOUT_BASE,
+      edgeLength: edge => edgeLengthFor(edge.data("correlation")),
+    },
     userZoomingEnabled: true,
     userPanningEnabled: true,
     minZoom: 0.3,
@@ -239,14 +248,9 @@ export function setNodeUniverseVisibility(node, inUniverse) {
   }
 }
 
-// Obsidian-style focus for fully-connected graphs: only the target node itself
-// gets highlighted (not "neighbours", since in a complete graph that's everyone).
-// Everything else dims. Connected edges stay visible so you can still trace
-// which correlation belongs to which pair, but other nodes don't falsely light up.
 function applyFocus(app, node) {
   const cy = app.cy;
   const keepEdges = node.connectedEdges();
-
   cy.elements().removeClass("dimmed focused");
   cy.elements().difference(node.union(keepEdges)).addClass("dimmed");
   node.addClass("focused");
@@ -276,7 +280,6 @@ export function setupGraphEvents(app) {
   app.cy.on("tap", "node", event => {
     const node = event.target;
     const data = node.data();
-
     if (app.lockedFocusNode && app.lockedFocusNode.id() === node.id()) {
       app.lockedFocusNode = null;
       clearFocus(app);
@@ -284,7 +287,6 @@ export function setupGraphEvents(app) {
       app.lockedFocusNode = node;
       applyFocus(app, node);
     }
-
     app.selectedNode = node;
     app.selectedEdge = null;
     node.connectedEdges().addClass("selected-edge");

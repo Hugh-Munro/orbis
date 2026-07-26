@@ -513,7 +513,7 @@ export function showCard(app, data, node) {
 }
 
 export function buildStatsPanel(stats) {
-  const container = document.getElementById("stats-panel");
+  const container = document.querySelector("#stats-panel .stats-grid");
   if (!container) return;
 
   function fmtPercent(val, decimals = 2) {
@@ -571,14 +571,10 @@ export function buildStatsPanel(stats) {
     },
   ];
 
-  container.innerHTML = `
-    <div class="stats-grid">
-      ${rows.map(row => `
-        <div class="stat-item" title="${row.tooltip}">
-          <div class="stat-label">${row.label}</div>
-          <div class="stat-value" style="color:${row.color}">${row.value}</div>
-        </div>
-      `).join("")}
-    </div>
-  `;
+  container.innerHTML = rows.map(row => `
+      <div class="stat-item" title="${row.tooltip}">
+        <div class="stat-label">${row.label}</div>
+        <div class="stat-value" style="color:${row.color}">${row.value}</div>
+      </div>
+    `).join("");
 }

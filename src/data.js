@@ -6,12 +6,11 @@ export async function loadCorrelationData() {
   return response.json();
 }
 
-// Convert correlation.json into the node/edge shape the rest of the app expects
 export function parseGraphData(correlationData) {
   const nodes = Object.entries(correlationData.assets).map(([id, meta]) => ({
     id,
     label: meta.name,
-    group: meta.class.toLowerCase(),  // "Equity" → "equity", matches GROUP_COLORS keys
+    group: meta.class.toLowerCase(),
     assetClass: meta.class,
     paradigm: meta.paradigm,
   }));

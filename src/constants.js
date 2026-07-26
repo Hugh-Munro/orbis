@@ -18,13 +18,12 @@ export const PARADIGM_COLORS = {
   "Real Assets":  { bg: "#f0e8f8", border: "#8050b0", text: "#402060" },
 };
 
-export const GRAPH_LAYOUT = {
+export const GRAPH_LAYOUT_BASE = {
   name: "cola",
   animate: true,
   infinite: true,
   fit: false,
   nodeSpacing: 45,
-  edgeLength: 340,
   nodeRepulsion: 60000,
   gravity: 0.35,
   dragCoeff: 0.008,

@@ -29,7 +29,8 @@ async function init() {
 
     buildSidebar(app, nodes);
     buildLegend();
-
+    
+    app.correlationData = correlationData;
     app.cy = createGraph(app, nodes, edges, deg);
 
     let activeScheme = "equal";
