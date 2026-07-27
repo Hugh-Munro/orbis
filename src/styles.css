@@ -491,7 +491,7 @@ input {
   gap: 5px;
 }
 
-.filters-label {
+#filters p {
   font-size: 10px;
   letter-spacing: 0.04em;
   text-transform: none;

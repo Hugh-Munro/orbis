@@ -339,7 +339,7 @@ export function setActiveFilterButton(activeBtn) {
 }
 
 export function resetInfoPanel() {
-  document.getElementById("info-content").textContent = "Select a node to explore.";
+  document.getElementById("info-content").textContent = "Select an asset to explore.";
 }
 
 export function updateInfoPanel(data, node, app) {
@@ -583,42 +583,42 @@ export function buildStatsPanel(stats) {
 
   const rows = [
     {
-      label: "Ann. return",
+      label: "CAGR",
       value: fmtPercent(stats.portfolioReturn),
       color: color(stats.portfolioReturn),
-      tooltip: "Portfolio annualised return per selected weighting",
+      tooltip: "Compound Annual Growth Rate — geometric annualised return per selected weighting",
     },
     {
-      label: "Ann. volatility",
+      label: "Realised Vol",
       value: Number.isFinite(stats.portfolioVol) ? (stats.portfolioVol * 100).toFixed(1) + "%" : "—",
       color: "#555",
-      tooltip: "Portfolio annualised volatility (√wᵀΣw)",
+      tooltip: "Annualised realised volatility of the portfolio (√wᵀΣw)",
     },
     {
       label: "Sharpe ratio",
       value: fmtRatio(stats.sharpe),
       color: color(Number.isFinite(stats.sharpe) ? stats.sharpe - 1 : NaN),
-      tooltip: "Sharpe = (Return − Rf) / Vol, Rf = 5.25%",
+      tooltip: "Sharpe = (CAGR − Rf) / Realised Vol, Rf = 5.25%",
     },
     {
       label: "Sortino ratio",
       value: fmtRatio(stats.sortino),
       color: color(Number.isFinite(stats.sortino) ? stats.sortino - 1 : NaN),
-      tooltip: "Sortino = (Return − Rf) / Downside Vol",
+      tooltip: "Sortino = (CAGR − Rf) / Downside Vol",
     },
     {
-      label: "Avg correlation",
+      label: "Mean Corr",
       value: fmtRatio(stats.avgCorrelation),
       color: Number.isFinite(stats.avgCorrelation)
         ? (stats.avgCorrelation > 0.5 ? "#c0385a" : "#2d8a5e")
         : "#a0a8b0",
-      tooltip: "Mean pairwise correlation across all asset pairs",
+      tooltip: "Mean pairwise correlation across all asset pairs in the portfolio",
     },
     {
       label: "Max drawdown",
       value: Number.isFinite(stats.maxDrawdown) ? (stats.maxDrawdown * 100).toFixed(1) + "%" : "—",
       color: "#c0385a",
-      tooltip: "Weighted avg of individual asset max drawdowns",
+      tooltip: "Weighted average of individual asset maximum drawdowns",
     },
   ];
 

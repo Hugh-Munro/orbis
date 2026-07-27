@@ -23,6 +23,7 @@
 
 <div id="stage">
   <div id="app">
+
     <div id="sidebar">
       <div id="sidebar-header">
         <h1>Orbis</h1>
@@ -31,7 +32,7 @@
       <div id="search-wrap">
         <div style="position:relative">
           <i class="ti ti-search" style="position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:14px;color:#a0a8b0;pointer-events:none"></i>
-          <input id="search-input" type="search" placeholder="Search nodes…" autocomplete="off" style="padding-left:30px">
+          <input id="search-input" type="search" placeholder="Search assets…" autocomplete="off" style="padding-left:30px">
         </div>
       </div>
       <div id="universe-panel">
@@ -42,20 +43,24 @@
         <div id="universe-list"></div>
       </div>
       <div id="weighting-panel">
-        <p>Weighting Scheme</p>
+        <p>Allocation Method</p>
         <div class="weight-tabs">
-          <button class="wt-tab active" data-scheme="equal" type="button">Equal</button>
-          <button class="wt-tab" data-scheme="inverse-vol" type="button">Inverse Vol</button>
+          <button class="wt-tab active" data-scheme="equal" type="button">Equal Weight</button>
+          <button class="wt-tab" data-scheme="inverse-vol" type="button">Vol Parity</button>
           <button class="wt-tab" data-scheme="custom" type="button">Custom</button>
         </div>
         <div id="custom-weights-wrap"></div>
       </div>
       <div id="portfolio-value-panel">
-        <p>Total Portfolio Value</p>
+        <p>NAV</p>
         <div class="pv-input-wrap">
           <span class="pv-prefix">$</span>
           <input id="portfolio-value-input" type="text" inputmode="numeric" value="100,000" autocomplete="off">
         </div>
+      </div>
+      <div id="filters">
+        <p>Risk Regime</p>
+        <button class="pf-btn active" data-filter="none" type="button">All assets</button>
       </div>
     </div>
 
@@ -78,24 +83,21 @@
         <p>Risk & Performance</p>
         <div class="stats-grid"></div>
       </div>
-      <div id="filters">
-        <div class="filters-label">Paradigm</div>
-        <button class="pf-btn active" data-filter="none" type="button">All nodes</button>
+      <div id="legend">
+        <p>Asset Class</p>
+        <div id="legend-items"></div>
+      </div>
+      <div id="info-panel">
+        <p>Details</p>
+        <div id="info-content">Select an asset to explore.</div>
       </div>
       <div id="reset-wrap">
         <button id="reset-btn" type="button">
           <i class="ti ti-refresh" style="font-size:13px;vertical-align:-1px;margin-right:5px"></i>Reset graph
         </button>
       </div>
-      <div id="legend">
-        <p>Node Class</p>
-        <div id="legend-items"></div>
-      </div>
-      <div id="info-panel">
-        <p>Selection</p>
-        <div id="info-content">Select a node to explore.</div>
-      </div>
     </div>
+
   </div>
 
   <div id="chart-view">
@@ -104,8 +106,8 @@
         <i class="ti ti-arrow-left"></i>
       </button>
       <div id="chart-title-wrap">
-        <div id="chart-title">Rolling 30-day Volatility</div>
-        <div id="chart-subtitle">Annualised · 30-day window</div>
+        <div id="chart-title">Realised Volatility (30D)</div>
+        <div id="chart-subtitle">Annualised · 30-day rolling window</div>
       </div>
     </div>
     <div id="chart-toggles"></div>
