@@ -5,92 +5,117 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Orbis</title>
 <link rel="icon" type="image/png" href="public/favicon.ico">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600;700&display=swap">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Serif:wght@400;600;700&family=IBM+Plex+Mono:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Serif:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
 <link rel="stylesheet" href="src/styles.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/webcola@3.4.0/WebCola/cola.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/cytoscape-cola@2.5.1/cytoscape-cola.min.js"></script>
 </head>
 <body>
-<div id="app">
-  <div id="sidebar">
-    <div id="sidebar-header">
-      <h1>Orbis</h1>
-      <p>The Portfolio Network</p>
-    </div>
-    <div id="search-wrap">
-      <div style="position:relative">
-        <i class="ti ti-search" style="position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:14px;color:#a0a8b0;pointer-events:none"></i>
-        <input id="search-input" type="search" placeholder="Search nodes…" autocomplete="off" style="padding-left:30px">
+
+<div id="view-dots">
+  <button class="view-dot active" id="dot-network" title="Portfolio Network"></button>
+  <button class="view-dot" id="dot-chart" title="Time Series"></button>
+</div>
+
+<div id="stage">
+  <div id="app">
+    <div id="sidebar">
+      <div id="sidebar-header">
+        <h1>Orbis</h1>
+        <p>The Portfolio Network</p>
+      </div>
+      <div id="search-wrap">
+        <div style="position:relative">
+          <i class="ti ti-search" style="position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:14px;color:#a0a8b0;pointer-events:none"></i>
+          <input id="search-input" type="search" placeholder="Search nodes…" autocomplete="off" style="padding-left:30px">
+        </div>
+      </div>
+      <div id="universe-panel">
+        <p id="universe-header">
+          Investable Universe
+          <i class="ti ti-chevron-down universe-chevron"></i>
+        </p>
+        <div id="universe-list"></div>
+      </div>
+      <div id="weighting-panel">
+        <p>Weighting Scheme</p>
+        <div class="weight-tabs">
+          <button class="wt-tab active" data-scheme="equal" type="button">Equal</button>
+          <button class="wt-tab" data-scheme="inverse-vol" type="button">Inverse Vol</button>
+          <button class="wt-tab" data-scheme="custom" type="button">Custom</button>
+        </div>
+        <div id="custom-weights-wrap"></div>
+      </div>
+      <div id="portfolio-value-panel">
+        <p>Total Portfolio Value</p>
+        <div class="pv-input-wrap">
+          <span class="pv-prefix">$</span>
+          <input id="portfolio-value-input" type="text" inputmode="numeric" value="100,000" autocomplete="off">
+        </div>
       </div>
     </div>
-    <div id="universe-panel">
-      <p id="universe-header">
-        Investable Universe
-        <i class="ti ti-chevron-down universe-chevron"></i>
-      </p>
-      <div id="universe-list"></div>
-    </div>
-    <div id="weighting-panel">
-      <p>Weighting Scheme</p>
-      <div class="weight-tabs">
-        <button class="wt-tab active" data-scheme="equal" type="button">Equal</button>
-        <button class="wt-tab" data-scheme="inverse-vol" type="button">Inverse Vol</button>
-        <button class="wt-tab" data-scheme="custom" type="button">Custom</button>
+
+    <div id="cy-wrap">
+      <div id="cy"></div>
+      <div class="floating-card" id="fc">
+        <div class="fc-header">
+          <div class="fc-name" id="fc-name"></div>
+          <div class="fc-pill" id="fc-pill"></div>
+        </div>
+        <div class="fc-ticker" id="fc-ticker"></div>
+        <div class="fc-allocation" id="fc-allocation"></div>
+        <div class="fc-mini-grid" id="fc-mini-grid"></div>
+        <div class="fc-corr-section" id="fc-corr-section"></div>
       </div>
-      <div id="custom-weights-wrap"></div>
     </div>
-    <div id="portfolio-value-panel">
-      <p>Total Portfolio Value</p>
-      <div class="pv-input-wrap">
-        <span class="pv-prefix">$</span>
-        <input id="portfolio-value-input" type="text" inputmode="numeric" value="100,000" autocomplete="off">
+
+    <div id="sidebar-right">
+      <div id="stats-panel">
+        <p>Risk & Performance</p>
+        <div class="stats-grid"></div>
+      </div>
+      <div id="filters">
+        <div class="filters-label">Paradigm</div>
+        <button class="pf-btn active" data-filter="none" type="button">All nodes</button>
+      </div>
+      <div id="reset-wrap">
+        <button id="reset-btn" type="button">
+          <i class="ti ti-refresh" style="font-size:13px;vertical-align:-1px;margin-right:5px"></i>Reset graph
+        </button>
+      </div>
+      <div id="legend">
+        <p>Node Class</p>
+        <div id="legend-items"></div>
+      </div>
+      <div id="info-panel">
+        <p>Selection</p>
+        <div id="info-content">Select a node to explore.</div>
       </div>
     </div>
   </div>
 
-  <div id="cy-wrap">
-    <div id="cy"></div>
-    <div class="floating-card" id="fc">
-      <div class="fc-header">
-        <div class="fc-name" id="fc-name"></div>
-        <div class="fc-pill" id="fc-pill"></div>
-      </div>
-      <div class="fc-ticker" id="fc-ticker"></div>
-      <div class="fc-allocation" id="fc-allocation"></div>
-      <div class="fc-mini-grid" id="fc-mini-grid"></div>
-      <div class="fc-corr-section" id="fc-corr-section"></div>
-    </div>
-  </div>
-
-  <div id="sidebar-right">
-    <div id="stats-panel">
-      <p>Risk & Performance</p>
-      <div class="stats-grid"></div>
-    </div>
-    <div id="filters">
-      <div class="filters-label">Paradigm</div>
-      <button class="pf-btn active" data-filter="none" type="button">All nodes</button>
-    </div>
-    <div id="reset-wrap">
-      <button id="reset-btn" type="button">
-        <i class="ti ti-refresh" style="font-size:13px;vertical-align:-1px;margin-right:5px"></i>Reset graph
+  <div id="chart-view">
+    <div id="chart-header">
+      <button id="chart-back-btn" type="button">
+        <i class="ti ti-arrow-left"></i>
       </button>
+      <div id="chart-title-wrap">
+        <div id="chart-title">Rolling 30-day Volatility</div>
+        <div id="chart-subtitle">Annualised · 30-day window</div>
+      </div>
     </div>
-    <div id="legend">
-      <p>Node Class</p>
-      <div id="legend-items"></div>
-    </div>
-    <div id="info-panel">
-      <p>Selection</p>
-      <div id="info-content">Select a node to explore.</div>
+    <div id="chart-toggles"></div>
+    <div id="chart-area">
+      <svg id="chart-svg"></svg>
+      <div id="chart-tooltip"></div>
     </div>
   </div>
 </div>
+
 <script src="src/main.js" type="module"></script>
 </body>
 </html>

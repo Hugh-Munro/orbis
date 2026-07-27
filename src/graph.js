@@ -30,9 +30,9 @@ function edgeLengthFor(correlation) {
 }
 
 function edgeColor(correlation) {
-  if (correlation >= 0.7) return "#9c3d2e";
-  if (correlation >= 0.3) return "#c46a52";
-  if (correlation >= 0)   return "#b8b4a8";
+  if (correlation >= 0.7)  return "#9c3d2e";
+  if (correlation >= 0.3)  return "#c46a52";
+  if (correlation >= 0)    return "#b8b4a8";
   if (correlation >= -0.3) return "#5c9a6e";
   return "#2f7a52";
 }
@@ -97,7 +97,11 @@ export function createGraph(app, nodes, edges, deg) {
           "background-color": ele => colorFor(ele).bg,
           "border-color": ele => colorFor(ele).border,
           "border-width": 1.5,
-          label: ele => `${ele.data("label")}\n${nodeDollarLabel(ele.id())}`,
+          label: ele => {
+            const size = nodeSize(ele.id());
+            if (size < 45) return ele.data("label");
+            return `${ele.data("label")}\n${nodeDollarLabel(ele.id())}`;
+          },
           color: ele => colorFor(ele).text,
           "font-family": "Inter",
           "font-size": ele => Math.min(13, Math.max(8, nodeSize(ele.id()) * 0.18)),

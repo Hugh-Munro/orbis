@@ -3,7 +3,6 @@ generate_correlation.py
 Run from the project root: python generate_correlation.py
 Writes data/correlation.json with real data from Yahoo Finance.
 """
-
 import json
 import numpy as np
 import pandas as pd
@@ -39,6 +38,7 @@ raw = yf.download(TICKERS, start=START, end=END, auto_adjust=True)["Close"]
 
 # Drop rows where every column is NaN, then forward-fill gaps up to 3 days
 raw = raw.dropna(how="all").ffill(limit=3)
+
 # Remove rows where any asset has an implausible single-day move (bad ticks)
 pct = raw.pct_change().abs()
 raw = raw[~(pct > 0.5).any(axis=1)]
@@ -49,8 +49,8 @@ print("Missingness:\n", raw.isnull().sum())
 # ── Returns (shared trading days only) ───────────────────────────────────────
 
 returns = raw.pct_change().dropna()
-# Remove any single-day return beyond ±50% (bad ticks, not real moves)
 returns = returns[returns.abs() < 0.5]
+
 print(f"\n{len(returns)} shared return observations")
 
 # ── Per-asset stats ───────────────────────────────────────────────────────────
@@ -58,7 +58,6 @@ print(f"\n{len(returns)} shared return observations")
 TRADING_DAYS = 252
 
 def annualised_return(r):
-    """Geometric annualised return."""
     total = (1 + r).prod()
     n_years = len(r) / TRADING_DAYS
     return float(total ** (1 / n_years) - 1)
@@ -84,7 +83,6 @@ def sortino(r):
         return None
     return (ann_ret - RF) / downside
 
-# Latest price per ticker
 latest_prices = {t: float(raw[t].dropna().iloc[-1]) for t in TICKERS}
 
 asset_stats = {}
@@ -109,7 +107,6 @@ corr_matrix = returns.corr()
 print("\nCorrelation matrix:")
 print(corr_matrix.round(3))
 
-# Build edge list (upper triangle only)
 edges = []
 for i, src in enumerate(TICKERS):
     for j, tgt in enumerate(TICKERS):
@@ -137,6 +134,13 @@ output = {
     "edges": edges,
     "window": f"Daily returns {START} to {END}",
     "computed_at": datetime.today().strftime("%Y-%m-%d"),
+    "daily_returns": {
+        t: {
+            "dates": [d.strftime("%Y-%m-%d") for d in returns.index],
+            "values": [round(float(v), 6) for v in returns[t]]
+        }
+        for t in TICKERS
+    },
 }
 
 # ── Write ─────────────────────────────────────────────────────────────────────

@@ -3,6 +3,7 @@ import { createGraph, setupGraphEvents, setNodeUniverseVisibility } from "./grap
 import { buildSidebar, buildLegend, buildStatsPanel, buildWeightingPanel, buildUniversePanel, buildPortfolioValuePanel, setPortfolioValueDisplay, resetView, setFilter } from "./ui.js";
 import { setupSearch } from "./search.js";
 import { computePortfolioStats, computeEqualWeights, computeInverseVolWeights } from "./stats.js";
+import { openChartView } from "./chart.js";
 
 const app = {
   cy: null,
@@ -16,6 +17,21 @@ const app = {
   emergentPortfolioValue: 0,
 };
 
+function setView(view) {
+  const stage = document.getElementById("stage");
+  const dotNetwork = document.getElementById("dot-network");
+  const dotChart = document.getElementById("dot-chart");
+  if (view === "chart") {
+    stage.classList.add("chart-open");
+    dotChart.classList.add("active");
+    dotNetwork.classList.remove("active");
+  } else {
+    stage.classList.remove("chart-open");
+    dotNetwork.classList.add("active");
+    dotChart.classList.remove("active");
+  }
+}
+
 async function init() {
   try {
     const correlationData = await loadCorrelationData();
@@ -24,13 +40,13 @@ async function init() {
     validateGraphData(nodes, edges);
 
     app.overlays = {};
+    app.correlationData = correlationData;
 
     const deg = degreeMap(nodes, edges);
 
     buildSidebar(app, nodes);
     buildLegend();
-    
-    app.correlationData = correlationData;
+
     app.cy = createGraph(app, nodes, edges, deg);
 
     let activeScheme = "equal";
@@ -50,8 +66,6 @@ async function init() {
 
       app.weights = weights;
 
-      // Shares mode: portfolio value is emergent from share counts × price.
-      // Any other mode: portfolio value is whatever the user typed in directly.
       if (app.valueMode === "shares") {
         app.portfolioValue = app.emergentPortfolioValue || 0;
         setPortfolioValueDisplay(app.portfolioValue, true);
@@ -61,6 +75,13 @@ async function init() {
 
       const stats = computePortfolioStats(correlationData, weights);
       buildStatsPanel(stats);
+
+      document.querySelectorAll(".stat-item").forEach(tile => {
+        tile.style.cursor = "pointer";
+        tile.addEventListener("click", () => {
+          openChartView(correlationData, app.weights, setView);
+        });
+      });
 
       if (app.cy) {
         app.cy.nodes().forEach(node => {
@@ -94,6 +115,31 @@ async function init() {
     document.getElementById("reset-btn").addEventListener("click", () => {
       resetView(app);
     });
+
+    document.getElementById("dot-chart").addEventListener("click", () => {
+      openChartView(correlationData, app.weights, setView);
+    });
+
+    document.getElementById("dot-network").addEventListener("click", () => {
+      setView("network");
+    });
+
+    document.getElementById("chart-back-btn").addEventListener("click", () => {
+      setView("network");
+    });
+
+    document.addEventListener("keydown", e => {
+      if (!e.ctrlKey) return;
+      const isChart = document.getElementById("stage").classList.contains("chart-open");
+      if (e.key === "ArrowRight" && !isChart) {
+        e.preventDefault();
+        openChartView(correlationData, app.weights, setView);
+      } else if (e.key === "ArrowLeft" && isChart) {
+        e.preventDefault();
+        setView("network");
+      }
+    });
+
   } catch (error) {
     console.error(error);
     document.getElementById("cy").innerHTML = `
