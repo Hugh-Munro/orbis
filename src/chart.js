@@ -31,31 +31,56 @@ function portfolioRollingVol(correlationData, weights) {
   };
 }
 
-export function openChartView(correlationData, weights, setView) {
-  setView("chart");
+function drawCorrelationMatrix(correlationData) {
+  const area = document.getElementById("chart-area");
+  const tickers = Object.keys(correlationData.assets);
+  const tickerLabels = tickers.map(t => t.split(".")[0].split("-")[0]);
 
-  document.fonts.ready.then(() => {
-    const port = portfolioRollingVol(correlationData, weights);
-    const assetSeries = {};
-    Object.keys(correlationData.assets).forEach(t => {
-      const dr = correlationData.daily_returns[t];
-      assetSeries[t] = {
-        name: correlationData.assets[t].name,
-        dates: dr.dates,
-        values: rollingVol(dr.values),
-        color: GROUP_COLORS[correlationData.assets[t].class?.toLowerCase()]?.border || "#888",
-      };
-    });
-
-    buildToggles(correlationData, assetSeries, port);
-    drawChart(port, {}, correlationData);
+  const corr = {};
+  tickers.forEach(t => {
+    corr[t] = {};
+    tickers.forEach(u => { corr[t][u] = t === u ? null : 0; });
   });
+  correlationData.edges.forEach(({ source, target, correlation }) => {
+    if (corr[source]) corr[source][target] = correlation;
+    if (corr[target]) corr[target][source] = correlation;
+  });
+
+  function cellColor(val) {
+    if (val >= 0.5)  return { bg: "#f2dbd8", text: "#7a2318" };
+    if (val >= 0.2)  return { bg: "#f5e8e6", text: "#9c3d2e" };
+    if (val >= 0)    return { bg: "#eeecea", text: "#888" };
+    if (val >= -0.2) return { bg: "#e8f0e8", text: "#2f7a52" };
+    return                  { bg: "#dceae0", text: "#1c4a32" };
+  }
+
+  const cols = tickers.length;
+  let html = `<div style="display:grid;grid-template-columns:44px repeat(${cols},1fr);grid-template-rows:28px repeat(${cols},1fr);gap:4px;padding:24px 28px;width:100%;height:100%;box-sizing:border-box;">`;
+
+  html += `<div></div>`;
+  tickerLabels.forEach(l => {
+    html += `<div style="display:flex;align-items:center;justify-content:center;font-size:10px;color:#a0a8b0;font-family:Inter,sans-serif;">${l}</div>`;
+  });
+
+  tickers.forEach((rowT, i) => {
+    html += `<div style="display:flex;align-items:center;justify-content:flex-end;padding-right:8px;font-size:10px;color:#a0a8b0;font-family:Inter,sans-serif;">${tickerLabels[i]}</div>`;
+    tickers.forEach(colT => {
+      const val = corr[rowT][colT];
+      if (val === null) {
+        html += `<div style="display:flex;align-items:center;justify-content:center;border-radius:6px;background:#f0ede6;font-size:12px;font-weight:600;color:#c8c0b4;font-family:Inter,sans-serif;">—</div>`;
+      } else {
+        const { bg, text } = cellColor(val);
+        const sign = val >= 0 ? "+" : "";
+        html += `<div style="display:flex;align-items:center;justify-content:center;border-radius:6px;background:${bg};font-size:12px;font-weight:600;color:${text};font-family:Inter,sans-serif;" title="${rowT} / ${colT}: ${sign}${val.toFixed(2)}">${sign}${val.toFixed(2)}</div>`;
+      }
+    });
+  });
+
+  html += `</div>`;
+  area.innerHTML = html;
 }
 
-let activeAssets = new Set();
-
 function buildToggles(correlationData, assetSeries, port) {
-  activeAssets = new Set();
   const wrap = document.getElementById("chart-toggles");
   wrap.innerHTML = "";
 
@@ -86,6 +111,79 @@ function buildToggles(correlationData, assetSeries, port) {
       drawChart(port, activeSeries, correlationData);
     });
     wrap.appendChild(btn);
+  });
+}
+
+let activeAssets = new Set();
+
+export function openChartView(correlationData, weights, setView) {
+  setView("chart");
+
+  document.fonts.ready.then(() => {
+    const port = portfolioRollingVol(correlationData, weights);
+    const assetSeries = {};
+    Object.keys(correlationData.assets).forEach(t => {
+      const dr = correlationData.daily_returns[t];
+      assetSeries[t] = {
+        name: correlationData.assets[t].name,
+        dates: dr.dates,
+        values: rollingVol(dr.values),
+        color: GROUP_COLORS[correlationData.assets[t].class?.toLowerCase()]?.border || "#888",
+      };
+    });
+
+    activeAssets = new Set();
+    buildToggles(correlationData, assetSeries, port);
+    drawChart(port, {}, correlationData);
+
+    // Tab switching
+    const tabs = document.querySelectorAll(".chart-tab");
+    const indicator = document.getElementById("chart-tab-indicator");
+    const togglesWrap = document.getElementById("chart-toggles");
+
+    function moveIndicator(tab) {
+      indicator.style.left = tab.offsetLeft + "px";
+      indicator.style.width = tab.offsetWidth + "px";
+    }
+
+    const titles = {
+      vol:      "Realised Volatility (30D)",
+      corr:     "Correlation Heatmap",
+      returns:  "Cumulative Returns",
+      drawdown: "Maximum Drawdown",
+      sharpe:   "Rolling Sharpe (90D)",
+    };
+
+    tabs.forEach(tab => {
+      tab.addEventListener("click", () => {
+        tabs.forEach(t => t.classList.remove("active"));
+        tab.classList.add("active");
+        moveIndicator(tab);
+
+        const type = tab.dataset.chart;
+        document.getElementById("chart-title").textContent = titles[type];
+        togglesWrap.style.display = type === "corr" ? "none" : "flex";
+
+        if (type === "vol") {
+          const activeSeries = {};
+          activeAssets.forEach(t => { activeSeries[t] = assetSeries[t]; });
+          drawChart(port, activeSeries, correlationData);
+        } else if (type === "corr") {
+          drawCorrelationMatrix(correlationData);
+        }
+        // returns, drawdown, sharpe — coming soon
+      });
+    });
+
+    // Reset to vol tab and init indicator on open
+    tabs.forEach(t => t.classList.remove("active"));
+    const volTab = document.querySelector('.chart-tab[data-chart="vol"]');
+    if (volTab) {
+      volTab.classList.add("active");
+      requestAnimationFrame(() => moveIndicator(volTab));
+    }
+    togglesWrap.style.display = "flex";
+    document.getElementById("chart-title").textContent = titles.vol;
   });
 }
 
@@ -139,7 +237,6 @@ function drawChart(port, assetSeries, correlationData) {
 
   let markup = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`;
 
-  // Y grid lines
   yTickVals.forEach(v => {
     const y = yScale(v);
     const isZero = Math.abs(v) < 0.0001;
@@ -147,14 +244,12 @@ function drawChart(port, assetSeries, correlationData) {
       stroke="#e8e8e0" stroke-width="${isZero ? 1.5 : 1}" stroke-dasharray="${isZero ? "none" : "3,4"}"/>`;
   });
 
-  // Avg vol overlay
   const avgY = yScale(avgVol);
   markup += `<line x1="${PAD.left}" y1="${avgY}" x2="${PAD.left + innerW}" y2="${avgY}"
     stroke="#0f1b2d" stroke-width="1" stroke-dasharray="6,4" opacity="0.25"/>`;
   markup += `<text x="${PAD.left + innerW + 6}" y="${avgY + 4}"
     font-family="Inter, sans-serif" font-size="9" fill="#0f1b2d" opacity="0.4">avg</text>`;
 
-  // Y-axis labels
   yTickVals.forEach(v => {
     const y = yScale(v);
     markup += `<text x="${PAD.left - 8}" y="${y + 4}" text-anchor="end"
@@ -163,7 +258,6 @@ function drawChart(port, assetSeries, correlationData) {
     </text>`;
   });
 
-  // X-axis labels + vertical guides
   filteredXTicks.forEach(({ i, label }) => {
     const x = xScale(i);
     markup += `<text x="${x}" y="${PAD.top + innerH + 20}" text-anchor="middle"
@@ -172,7 +266,6 @@ function drawChart(port, assetSeries, correlationData) {
       stroke="#e8e8e0" stroke-width="1"/>`;
   });
 
-  // Series lines
   allSeries.forEach(series => {
     let segments = [];
     let current = [];
@@ -192,29 +285,24 @@ function drawChart(port, assetSeries, correlationData) {
     });
   });
 
-  // Axes
   markup += `<line x1="${PAD.left}" y1="${PAD.top}" x2="${PAD.left}" y2="${PAD.top + innerH}"
     stroke="#dde0e4" stroke-width="1"/>`;
   markup += `<line x1="${PAD.left}" y1="${PAD.top + innerH}" x2="${PAD.left + innerW}" y2="${PAD.top + innerH}"
     stroke="#dde0e4" stroke-width="1"/>`;
 
-  // Hover hit area
   markup += `<rect id="chart-hover-rect" x="${PAD.left}" y="${PAD.top}"
     width="${innerW}" height="${innerH}" fill="transparent" style="cursor:crosshair"/>`;
-
-  // Crosshair
   markup += `<line id="chart-crosshair" x1="0" y1="${PAD.top}" x2="0" y2="${PAD.top + innerH}"
     stroke="#0f1b2d" stroke-width="1" stroke-dasharray="3,3" opacity="0.3" display="none"/>`;
 
   markup += `</svg>`;
 
-  area.querySelector("svg").outerHTML = markup;
+  area.innerHTML = markup;
   const newSvg = area.querySelector("svg");
   newSvg.id = "chart-svg";
   newSvg.style.width = "100%";
   newSvg.style.height = "100%";
 
-  // Hover interactivity
   const tooltip = document.getElementById("chart-tooltip");
   const hoverRect = newSvg.getElementById("chart-hover-rect");
   const crosshair = newSvg.getElementById("chart-crosshair");

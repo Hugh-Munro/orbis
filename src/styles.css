@@ -938,3 +938,93 @@ input {
 .view-dot.active {
   background: var(--ink);
 }
+
+#chart-tabs {
+  display: flex;
+  position: relative;
+  background: #fff;
+  border: 0.5px solid var(--line);
+  border-radius: 20px;
+  padding: 3px;
+  width: fit-content;
+  gap: 0;
+}
+
+.chart-tab {
+  position: relative;
+  z-index: 1;
+  padding: 5px 16px;
+  border-radius: 20px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--faint);
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  white-space: nowrap;
+  transition: color 0.25s;
+  font-family: var(--font-main);
+}
+
+.chart-tab.active {
+  color: #fff;
+  font-weight: 600;
+}
+
+#chart-tab-indicator {
+  position: absolute;
+  top: 3px;
+  height: calc(100% - 6px);
+  background: var(--ink);
+  border-radius: 20px;
+  transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 0;
+  pointer-events: none;
+}
+
+#chart-tabs {
+  display: flex;
+  position: relative;
+  background: #fff;
+  border: 0.5px solid var(--line);
+  border-radius: 20px;
+  padding: 3px;
+  width: fit-content;
+  gap: 0;
+}
+
+#chart-tab-indicator {
+  position: absolute;
+  top: 3px;
+  height: calc(100% - 6px);
+  background: var(--ink);
+  border-radius: 20px;
+  transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 0;
+  pointer-events: none;
+}
+
+.chart-tab {
+  position: relative;
+  z-index: 1;
+  padding: 5px 16px;
+  border-radius: 20px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--faint);
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  white-space: nowrap;
+  transition: color 0.25s;
+  font-family: var(--font-main);
+}
+
+.chart-tab.active {
+  color: #fff;
+  font-weight: 600;
+}
+
+.chart-tab:hover:not(.active) {
+  color: var(--ink);
+}
