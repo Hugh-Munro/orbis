@@ -12,9 +12,7 @@ function formatDollars(amount) {
 export function buildSidebar(app, nodes) {
   const container = document.getElementById("filters");
   container.querySelectorAll(".pf-btn:not([data-filter='none'])").forEach(b => b.remove());
-
   const paradigms = [...new Set(nodes.map(n => n.paradigm))].sort();
-
   paradigms.forEach(paradigm => {
     const c = PARADIGM_COLORS[paradigm] || { bg: "#f0f0f0", border: "#999", text: "#333" };
     const btn = document.createElement("button");
@@ -64,7 +62,6 @@ export function buildPortfolioValuePanel(app, onValueChange) {
   }
 
   app.portfolioValue = parseValue(input.value);
-
   input.addEventListener("blur", commit);
   input.addEventListener("keydown", e => {
     if (e.key === "Enter") input.blur();
@@ -97,14 +94,17 @@ export function buildUniversePanel(app, nodes, onUniverseChange) {
   container.querySelectorAll(".universe-checkbox").forEach(cb => {
     cb.addEventListener("change", () => {
       const ticker = cb.dataset.ticker;
+      const row = cb.closest(".universe-row");
       if (cb.checked) {
         app.selectedTickers.add(ticker);
+        row.classList.remove("unchecked");
       } else {
         if (app.selectedTickers.size <= 1) {
           cb.checked = true;
           return;
         }
         app.selectedTickers.delete(ticker);
+        row.classList.add("unchecked");
       }
       onUniverseChange(app.selectedTickers);
     });
@@ -120,11 +120,22 @@ export function buildUniversePanel(app, nodes, onUniverseChange) {
 export function buildWeightingPanel(app, correlationData, onWeightsChange) {
   const tabs = document.querySelectorAll(".wt-tab");
   const customWrap = document.getElementById("custom-weights-wrap");
-  const modeToggle = document.getElementById("custom-mode-toggle");
+  const indicator = document.getElementById("weight-tab-indicator");
   const allTickers = Object.keys(correlationData.assets);
 
   app.valueMode = "value";
   let customMode = "weights";
+
+  function moveIndicator(tab) {
+    if (!indicator) return;
+    indicator.style.left = tab.offsetLeft + "px";
+    indicator.style.width = tab.offsetWidth + "px";
+  }
+
+  requestAnimationFrame(() => {
+    const activeTab = document.querySelector(".wt-tab.active");
+    if (activeTab) moveIndicator(activeTab);
+  });
 
   function activeTickers() {
     return allTickers.filter(t => !app.selectedTickers || app.selectedTickers.has(t));
@@ -294,8 +305,8 @@ export function buildWeightingPanel(app, correlationData, onWeightsChange) {
     tab.addEventListener("click", () => {
       tabs.forEach(b => b.classList.remove("active"));
       tab.classList.add("active");
+      moveIndicator(tab);
       const scheme = tab.dataset.scheme;
-
       if (scheme === "custom") {
         customWrap.classList.add("visible");
         customMode = "weights";
@@ -344,7 +355,6 @@ export function resetInfoPanel() {
 
 export function updateInfoPanel(data, node, app) {
   const edges = node.connectedEdges();
-
   let correlationRows = "";
   edges.forEach(edge => {
     const otherId = edge.source().id() === data.id
@@ -384,10 +394,10 @@ export function updateEdgeInfoPanel(edge) {
   const abs = Math.abs(corr);
 
   let interpretation = "";
-  if (abs >= 0.7)       interpretation = corr > 0 ? "Strong positive — these assets move together closely." : "Strong negative — these assets move in opposite directions.";
-  else if (abs >= 0.4)  interpretation = corr > 0 ? "Moderate positive correlation." : "Moderate negative — useful diversification.";
-  else if (abs >= 0.2)  interpretation = "Weak correlation — largely independent.";
-  else                  interpretation = "Near-zero correlation — effectively uncorrelated.";
+  if (abs >= 0.7)      interpretation = corr > 0 ? "Strong positive — these assets move together closely." : "Strong negative — these assets move in opposite directions.";
+  else if (abs >= 0.4) interpretation = corr > 0 ? "Moderate positive correlation." : "Moderate negative — useful diversification.";
+  else if (abs >= 0.2) interpretation = "Weak correlation — largely independent.";
+  else                 interpretation = "Near-zero correlation — effectively uncorrelated.";
 
   document.getElementById("info-content").innerHTML = `
     <strong style="font-size:13px">${source} / ${target}</strong>
@@ -400,11 +410,11 @@ export function updateEdgeInfoPanel(edge) {
 
 export function updateSearchInfo(rawQuery, resultCount) {
   if (resultCount === 0) {
-    document.getElementById("info-content").textContent = `No node found for "${rawQuery}".`;
+    document.getElementById("info-content").textContent = `No asset found for "${rawQuery}".`;
     return;
   }
   document.getElementById("info-content").textContent =
-    `${resultCount} node${resultCount === 1 ? "" : "s"} found. Press Enter to fit.`;
+    `${resultCount} asset${resultCount === 1 ? "" : "s"} found. Press Enter to fit.`;
 }
 
 export function hideCard(app) {
@@ -485,57 +495,6 @@ export function positionCardForNode(app, node) {
   card.style.left = `${Math.max(margin, left)}px`;
   card.style.top = `${Math.max(margin, top)}px`;
 }
-
-export function buildCorrelationMatrix(stats, correlationData) {
-  const container = document.getElementById("correlation-matrix");
-  if (!container) return;
-
-  const { tickers, corrMatrix } = stats;
-  if (!tickers || !corrMatrix) return;
-
-  const labels = tickers.map(t => correlationData.assets[t]?.name?.split(" ")[0] || t);
-
-  function cellColor(val) {
-    if (val >= 0.5)  return { bg: "#f2dbd8", text: "#7a2318" };
-    if (val >= 0.2)  return { bg: "#f5e8e6", text: "#9c3d2e" };
-    if (val >= 0)    return { bg: "#eeecea", text: "#888" };
-    if (val >= -0.2) return { bg: "#e8f0e8", text: "#2f7a52" };
-    return                  { bg: "#dceae0", text: "#1c4a32" };
-  }
-
-  const tickerLabels = tickers.map(t => t.split(".")[0].split("-")[0]);
-
-  let html = `<div class="cm-grid" style="grid-template-columns: 32px repeat(${tickers.length}, 1fr);">`;
-
-  // Top-left empty corner
-  html += `<div class="cm-cell"></div>`;
-
-  // Column headers
-  tickerLabels.forEach(label => {
-    html += `<div class="cm-cell cm-label">${label}</div>`;
-  });
-
-  // Rows
-  tickers.forEach((rowT, i) => {
-    html += `<div class="cm-cell cm-label" style="justify-content:flex-end;padding-right:5px;">${tickerLabels[i]}</div>`;
-    tickers.forEach((colT, j) => {
-      if (i === j) {
-        html += `<div class="cm-cell cm-val cm-diag"><span>—</span></div>`;
-      } else {
-        const val = corrMatrix[rowT][colT];
-        const { bg, text } = cellColor(val);
-        const sign = val >= 0 ? "+" : "";
-        html += `<div class="cm-cell cm-val" style="background:${bg};" title="${rowT} / ${colT}: ${sign}${val.toFixed(2)}">
-          <span style="color:${text};">${sign}${val.toFixed(2)}</span>
-        </div>`;
-      }
-    });
-  });
-
-  html += `</div>`;
-  container.innerHTML = html;
-}
-
 
 export function showCard(app, data, node) {
   const card = document.getElementById("fc");

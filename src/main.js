@@ -1,6 +1,6 @@
 import { loadCorrelationData, parseGraphData, degreeMap, validateGraphData } from "./data.js";
 import { createGraph, setupGraphEvents, setNodeUniverseVisibility } from "./graph.js";
-import { buildSidebar, buildLegend, buildStatsPanel, buildWeightingPanel, buildUniversePanel, buildPortfolioValuePanel, buildCorrelationMatrix, setPortfolioValueDisplay, resetView, setFilter } from "./ui.js";
+import { buildSidebar, buildLegend, buildStatsPanel, buildWeightingPanel, buildUniversePanel, buildPortfolioValuePanel, setPortfolioValueDisplay, resetView, setFilter } from "./ui.js";
 import { setupSearch } from "./search.js";
 import { computePortfolioStats, computeEqualWeights, computeInverseVolWeights } from "./stats.js";
 import { openChartView } from "./chart.js";

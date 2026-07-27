@@ -252,38 +252,51 @@ input {
 
 .weight-tabs {
   display: flex;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  overflow: hidden;
+  position: relative;
+  background: #fff;
+  border: 0.5px solid var(--line);
+  border-radius: 20px;
+  padding: 3px;
+  width: 100%;
+  gap: 0;
+  margin-bottom: 8px;
+}
+
+#weight-tab-indicator {
+  position: absolute;
+  top: 3px;
+  height: calc(100% - 6px);
+  background: var(--ink);
+  border-radius: 20px;
+  transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 0;
+  pointer-events: none;
 }
 
 .wt-tab {
+  position: relative;
+  z-index: 1;
   flex: 1;
   background: transparent;
   border: none;
-  border-right: 1px solid var(--line);
-  color: #4a5568;
+  color: var(--faint);
   cursor: pointer;
-  font-size: 11.5px;
+  font-size: 11px;
   font-family: var(--font-main);
-  padding: 7px 4px;
+  padding: 5px 8px;
   text-align: center;
-  transition: all 0.15s;
-}
-
-.wt-tab:last-child {
-  border-right: none;
-}
-
-.wt-tab:hover {
-  background: var(--bg);
-  color: var(--ink);
+  transition: color 0.25s;
+  white-space: nowrap;
+  border-radius: 20px;
 }
 
 .wt-tab.active {
-  background: var(--ink);
-  color: #ffffff;
-  font-weight: 700;
+  color: #fff;
+  font-weight: 600;
+}
+
+.wt-tab:hover:not(.active) {
+  color: var(--ink);
 }
 
 #custom-weights-wrap {
@@ -343,10 +356,11 @@ input {
   font-size: 11.5px;
   color: #4a5568;
   margin-bottom: 3px;
+  font-family: var(--font-main);
 }
 
 .weight-row-value {
-  font-family: var(--font-mono);
+  font-family: var(--font-main);
   font-weight: 700;
   color: var(--ink);
 }
@@ -370,7 +384,7 @@ input {
 }
 
 .shares-row-value {
-  font-family: var(--font-mono);
+  font-family: var(--font-main);
   font-weight: 700;
   color: var(--ink);
 }
@@ -380,7 +394,7 @@ input {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 6px 8px;
-  font-family: var(--font-mono);
+  font-family: var(--font-main);
   font-size: 12px;
   color: var(--ink);
 }
@@ -980,45 +994,7 @@ input {
   transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 0;
   pointer-events: none;
-}
-
-#chart-tabs {
-  display: flex;
-  position: relative;
-  background: #fff;
-  border: 0.5px solid var(--line);
-  border-radius: 20px;
-  padding: 3px;
-  width: fit-content;
-  gap: 0;
-}
-
-#chart-tab-indicator {
-  position: absolute;
-  top: 3px;
-  height: calc(100% - 6px);
-  background: var(--ink);
-  border-radius: 20px;
-  transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  z-index: 0;
-  pointer-events: none;
-}
-
-.chart-tab {
-  position: relative;
-  z-index: 1;
-  padding: 5px 16px;
-  border-radius: 20px;
-  font-size: 11.5px;
-  font-weight: 500;
-  color: var(--faint);
-  cursor: pointer;
-  border: none;
-  background: transparent;
-  white-space: nowrap;
-  transition: color 0.25s;
-  font-family: var(--font-main);
-}
+} 
 
 .chart-tab.active {
   color: #fff;
