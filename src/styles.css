@@ -204,21 +204,36 @@ input {
 }
 
 .universe-checkbox {
-  accent-color: var(--ink);
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid var(--line-strong);
+  background: transparent;
   cursor: pointer;
   flex-shrink: 0;
+  position: relative;
+  transition: all 0.15s;
+}
+
+.universe-checkbox:checked {
+  background: var(--ink);
+  border-color: var(--ink);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='6' viewBox='0 0 8 6' fill='none'%3E%3Cpath d='M1 3L3 5L7 1' stroke='white' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+.universe-class {
+  font-family: var(--font-main);
+  font-size: 11px;
+  color: var(--faint);
 }
 
 .universe-name {
   flex: 1;
   color: var(--ink);
-}
-
-.universe-class {
-  font-family: var(--font-mono);
-  font-size: 9.5px;
-  color: var(--faint);
-  letter-spacing: 0.04em;
 }
 
 /* Weighting scheme */
@@ -497,7 +512,7 @@ input {
   text-transform: none;
   color: var(--faint);
   margin-bottom: 4px;
-}
+} 
 
 .pf-btn {
   background: transparent;
@@ -667,7 +682,7 @@ input {
 }
 
 .fc-ticker {
-  font-family: var(--font-mono);
+  font-family: var(--font-main);
   font-size: 10px;
   color: var(--faint);
   letter-spacing: 0.06em;
@@ -686,7 +701,7 @@ input {
 }
 
 .fc-alloc-amount {
-  font-family: var(--font-mono);
+  font-family: var(--font-main);
   font-size: 18px;
   font-weight: 700;
   color: var(--ink);
@@ -694,7 +709,7 @@ input {
 }
 
 .fc-alloc-pct {
-  font-family: var(--font-mono);
+  font-family: var(--font-main);
   font-size: 11px;
   color: var(--faint);
 }
@@ -720,7 +735,7 @@ input {
 }
 
 .fc-stat-val {
-  font-family: var(--font-mono);
+  font-family: var(--font-main);
   font-size: 13px;
   font-weight: 700;
 }
@@ -749,7 +764,7 @@ input {
 }
 
 .fc-corr-val {
-  font-family: var(--font-mono);
+  font-family: var(--font-main);
   font-size: 11px;
   font-weight: 600;
 }

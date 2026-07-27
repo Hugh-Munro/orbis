@@ -152,13 +152,13 @@ function drawChart(port, assetSeries, correlationData) {
   markup += `<line x1="${PAD.left}" y1="${avgY}" x2="${PAD.left + innerW}" y2="${avgY}"
     stroke="#0f1b2d" stroke-width="1" stroke-dasharray="6,4" opacity="0.25"/>`;
   markup += `<text x="${PAD.left + innerW + 6}" y="${avgY + 4}"
-    font-family="IBM Plex Mono, monospace" font-size="9" fill="#0f1b2d" opacity="0.4">avg</text>`;
+    font-family="Inter, sans-serif" font-size="9" fill="#0f1b2d" opacity="0.4">avg</text>`;
 
   // Y-axis labels
   yTickVals.forEach(v => {
     const y = yScale(v);
     markup += `<text x="${PAD.left - 8}" y="${y + 4}" text-anchor="end"
-      font-family="IBM Plex Mono, monospace" font-size="10" fill="#a0a8b0">
+      font-family="Inter, sans-serif" font-size="10" fill="#a0a8b0">
       ${(v * 100).toFixed(0)}%
     </text>`;
   });
@@ -167,7 +167,7 @@ function drawChart(port, assetSeries, correlationData) {
   filteredXTicks.forEach(({ i, label }) => {
     const x = xScale(i);
     markup += `<text x="${x}" y="${PAD.top + innerH + 20}" text-anchor="middle"
-      font-family="IBM Plex Mono, monospace" font-size="10" fill="#a0a8b0">${label}</text>`;
+      font-family="Inter, sans-serif" font-size="10" fill="#a0a8b0">${label}</text>`;
     markup += `<line x1="${x}" y1="${PAD.top}" x2="${x}" y2="${PAD.top + innerH}"
       stroke="#e8e8e0" stroke-width="1"/>`;
   });

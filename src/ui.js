@@ -486,6 +486,57 @@ export function positionCardForNode(app, node) {
   card.style.top = `${Math.max(margin, top)}px`;
 }
 
+export function buildCorrelationMatrix(stats, correlationData) {
+  const container = document.getElementById("correlation-matrix");
+  if (!container) return;
+
+  const { tickers, corrMatrix } = stats;
+  if (!tickers || !corrMatrix) return;
+
+  const labels = tickers.map(t => correlationData.assets[t]?.name?.split(" ")[0] || t);
+
+  function cellColor(val) {
+    if (val >= 0.5)  return { bg: "#f2dbd8", text: "#7a2318" };
+    if (val >= 0.2)  return { bg: "#f5e8e6", text: "#9c3d2e" };
+    if (val >= 0)    return { bg: "#eeecea", text: "#888" };
+    if (val >= -0.2) return { bg: "#e8f0e8", text: "#2f7a52" };
+    return                  { bg: "#dceae0", text: "#1c4a32" };
+  }
+
+  const tickerLabels = tickers.map(t => t.split(".")[0].split("-")[0]);
+
+  let html = `<div class="cm-grid" style="grid-template-columns: 32px repeat(${tickers.length}, 1fr);">`;
+
+  // Top-left empty corner
+  html += `<div class="cm-cell"></div>`;
+
+  // Column headers
+  tickerLabels.forEach(label => {
+    html += `<div class="cm-cell cm-label">${label}</div>`;
+  });
+
+  // Rows
+  tickers.forEach((rowT, i) => {
+    html += `<div class="cm-cell cm-label" style="justify-content:flex-end;padding-right:5px;">${tickerLabels[i]}</div>`;
+    tickers.forEach((colT, j) => {
+      if (i === j) {
+        html += `<div class="cm-cell cm-val cm-diag"><span>—</span></div>`;
+      } else {
+        const val = corrMatrix[rowT][colT];
+        const { bg, text } = cellColor(val);
+        const sign = val >= 0 ? "+" : "";
+        html += `<div class="cm-cell cm-val" style="background:${bg};" title="${rowT} / ${colT}: ${sign}${val.toFixed(2)}">
+          <span style="color:${text};">${sign}${val.toFixed(2)}</span>
+        </div>`;
+      }
+    });
+  });
+
+  html += `</div>`;
+  container.innerHTML = html;
+}
+
+
 export function showCard(app, data, node) {
   const card = document.getElementById("fc");
   const colors = GROUP_COLORS[data.group] || GROUP_COLORS.equity;

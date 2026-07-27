@@ -84,5 +84,7 @@ export function computePortfolioStats(correlationData, weights) {
     sortino,
     avgCorrelation,
     maxDrawdown,
+    corrMatrix,
+    tickers,
   };
 }
