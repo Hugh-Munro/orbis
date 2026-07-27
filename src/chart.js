@@ -25,11 +25,526 @@ function portfolioRollingVol(correlationData, weights) {
       return sum + w * v;
     }, 0);
   });
-  return {
-    dates: allDates,
-    values: rollingVol(portReturns),
-  };
+  return { dates: allDates, values: rollingVol(portReturns) };
 }
+
+// ── Shared hover + click interactivity ───────────────────────────────────────
+
+let lockedSeries = null;
+
+function attachChartInteractivity(area, newSvg, W, PAD, innerW, dates, allSeries, xScale, formatValue) {
+  const tooltip = document.getElementById("chart-tooltip");
+  const hoverRect = newSvg.getElementById("chart-hover-rect");
+  const crosshair = newSvg.getElementById("chart-crosshair");
+  const polylines = newSvg.querySelectorAll("polyline[data-label]");
+
+  function applyFocus(label) {
+    polylines.forEach(pl => {
+      if (pl.dataset.label === label) {
+        pl.setAttribute("opacity", "1");
+        pl.setAttribute("stroke-width", parseFloat(pl.dataset.width) + 1);
+      } else {
+        pl.setAttribute("opacity", "0.1");
+      }
+    });
+  }
+
+  function clearFocus() {
+    polylines.forEach(pl => {
+      pl.setAttribute("opacity", "0.85");
+      pl.setAttribute("stroke-width", pl.dataset.width);
+    });
+  }
+
+  // Click on polyline to lock focus
+  polylines.forEach(pl => {
+    pl.style.cursor = "pointer";
+    pl.addEventListener("click", () => {
+      if (lockedSeries === pl.dataset.label) {
+        lockedSeries = null;
+        clearFocus();
+      } else {
+        lockedSeries = pl.dataset.label;
+        applyFocus(lockedSeries);
+      }
+    });
+  });
+
+  hoverRect.addEventListener("mousemove", e => {
+    const rect = newSvg.getBoundingClientRect();
+    const scaleX = W / rect.width;
+    const mouseX = (e.clientX - rect.left) * scaleX;
+    const idx = Math.round(((mouseX - PAD.left) / innerW) * (dates.length - 1));
+    if (idx < 0 || idx >= dates.length) return;
+
+    const x = xScale(idx);
+    crosshair.setAttribute("x1", x);
+    crosshair.setAttribute("x2", x);
+    crosshair.setAttribute("display", "inline");
+
+    // Hover focus (only if nothing locked)
+    if (!lockedSeries) {
+      // Find closest series by value proximity at this idx
+      let closest = null;
+      let closestDist = Infinity;
+      allSeries.forEach(s => {
+        const v = s.values[idx];
+        if (v == null) return;
+        const screenY = newSvg.getBoundingClientRect().top + (rect.height * ((v - 0) / 1));
+        const dist = Math.abs(e.clientY - screenY);
+        if (dist < closestDist) { closestDist = dist; closest = s.label; }
+      });
+    }
+
+    const date = dates[idx];
+    let html = `<div style="font-size:10px;color:#a0a8b0;margin-bottom:5px;">${date}</div>`;
+    allSeries.forEach(s => {
+      const v = s.values[idx];
+      if (v == null) return;
+      const formatted = formatValue(v, s);
+      html += `<div style="display:flex;justify-content:space-between;gap:16px;margin-bottom:2px;">
+        <span style="color:${s.color};font-weight:600;">${s.label}</span>
+        <span>${formatted}</span>
+      </div>`;
+    });
+
+    tooltip.innerHTML = html;
+    tooltip.style.display = "block";
+
+    const areaRect = area.getBoundingClientRect();
+    const tipX = e.clientX - areaRect.left + 12;
+    const tipY = e.clientY - areaRect.top - 20;
+    const flipLeft = tipX + 180 > areaRect.width;
+    tooltip.style.left = flipLeft ? `${tipX - 200}px` : `${tipX}px`;
+    tooltip.style.top = `${Math.max(8, tipY)}px`;
+  });
+
+  hoverRect.addEventListener("mouseleave", () => {
+    crosshair.setAttribute("display", "none");
+    tooltip.style.display = "none";
+  });
+
+  // Click background to clear lock
+  hoverRect.addEventListener("click", () => {
+    lockedSeries = null;
+    clearFocus();
+  });
+}
+
+// ── Shared SVG scaffolding ────────────────────────────────────────────────────
+
+function buildSVGScaffold(W, H, PAD, innerW, innerH, yTickVals, yScale, xScale, filteredXTicks, formatYLabel) {
+  let markup = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`;
+
+  yTickVals.forEach(v => {
+    const y = yScale(v);
+    const isBase = formatYLabel(v) === "0%" || formatYLabel(v) === "+0%";
+    markup += `<line x1="${PAD.left}" y1="${y}" x2="${PAD.left + innerW}" y2="${y}"
+      stroke="#e8e8e0" stroke-width="${isBase ? 1.5 : 1}" stroke-dasharray="${isBase ? "none" : "3,4"}"/>`;
+  });
+
+  yTickVals.forEach(v => {
+    const y = yScale(v);
+    markup += `<text x="${PAD.left - 8}" y="${y + 4}" text-anchor="end"
+      font-family="Inter, sans-serif" font-size="10" fill="#a0a8b0">${formatYLabel(v)}</text>`;
+  });
+
+  filteredXTicks.forEach(({ i, label }) => {
+    const x = xScale(i);
+    markup += `<text x="${x}" y="${PAD.top + innerH + 20}" text-anchor="middle"
+      font-family="Inter, sans-serif" font-size="10" fill="#a0a8b0">${label}</text>`;
+    markup += `<line x1="${x}" y1="${PAD.top}" x2="${x}" y2="${PAD.top + innerH}"
+      stroke="#e8e8e0" stroke-width="1"/>`;
+  });
+
+  markup += `<line x1="${PAD.left}" y1="${PAD.top}" x2="${PAD.left}" y2="${PAD.top + innerH}" stroke="#dde0e4" stroke-width="1"/>`;
+  markup += `<line x1="${PAD.left}" y1="${PAD.top + innerH}" x2="${PAD.left + innerW}" y2="${PAD.top + innerH}" stroke="#dde0e4" stroke-width="1"/>`;
+
+  return markup;
+}
+
+function buildXTicks(dates) {
+  const xTicks = [];
+  let lastYear = null;
+  dates.forEach((d, i) => {
+    const year = d.slice(0, 4);
+    if ((d.endsWith("-01-01") || d.endsWith("-01-02") || d.endsWith("-01-03")) && year !== lastYear) {
+      xTicks.push({ i, label: year });
+      lastYear = year;
+    }
+  });
+  return xTicks.length > 6 ? xTicks.filter((_, i) => i % 2 === 0) : xTicks;
+}
+
+// ── Volatility chart ──────────────────────────────────────────────────────────
+
+function drawChart(port, assetSeries, correlationData) {
+  lockedSeries = null;
+  const area = document.getElementById("chart-area");
+  const W = area.clientWidth || 800;
+  const H = area.clientHeight || 500;
+  const PAD = { top: 24, right: 56, bottom: 48, left: 62 };
+  const innerW = W - PAD.left - PAD.right;
+  const innerH = H - PAD.top - PAD.bottom;
+
+  const allSeries = [
+    { dates: port.dates, values: port.values, color: "#0f1b2d", width: 2, label: "Portfolio" },
+    ...Object.entries(assetSeries).map(([t, s]) => ({
+      dates: s.dates, values: s.values, color: s.color, width: 1.5, label: s.name,
+    })),
+  ];
+
+  const dates = port.dates;
+  const validVals = allSeries.flatMap(s => s.values.filter(v => v !== null));
+  const minY = 0;
+  const maxY = Math.max(...validVals) * 1.08;
+
+  const xScale = i => PAD.left + (i / (dates.length - 1)) * innerW;
+  const yScale = v => PAD.top + innerH - ((v - minY) / (maxY - minY)) * innerH;
+
+  const portValid = port.values.filter(v => v !== null);
+  const avgVol = portValid.reduce((a, b) => a + b, 0) / portValid.length;
+
+  const yTicks = 5;
+  const yTickVals = Array.from({ length: yTicks + 1 }, (_, i) => minY + (maxY - minY) * (i / yTicks));
+
+  let markup = buildSVGScaffold(W, H, PAD, innerW, innerH, yTickVals, yScale, xScale,
+    buildXTicks(dates), v => `${(v * 100).toFixed(0)}%`);
+
+  // Avg line
+  const avgY = yScale(avgVol);
+  markup += `<line x1="${PAD.left}" y1="${avgY}" x2="${PAD.left + innerW}" y2="${avgY}"
+    stroke="#0f1b2d" stroke-width="1" stroke-dasharray="6,4" opacity="0.25"/>`;
+  markup += `<text x="${PAD.left + innerW + 6}" y="${avgY + 4}"
+    font-family="Inter, sans-serif" font-size="9" fill="#0f1b2d" opacity="0.4">avg</text>`;
+
+  // Series
+  allSeries.forEach(series => {
+    let segments = [];
+    let current = [];
+    series.values.forEach((v, i) => {
+      if (v === null) { if (current.length) { segments.push(current); current = []; } }
+      else current.push(`${xScale(i).toFixed(1)},${yScale(v).toFixed(1)}`);
+    });
+    if (current.length) segments.push(current);
+    segments.forEach(seg => {
+      markup += `<polyline data-label="${series.label}" data-width="${series.width}" points="${seg.join(" ")}"
+        fill="none" stroke="${series.color}" stroke-width="${series.width}"
+        stroke-linejoin="round" stroke-linecap="round" opacity="0.85"/>`;
+    });
+  });
+
+  markup += `<rect id="chart-hover-rect" x="${PAD.left}" y="${PAD.top}" width="${innerW}" height="${innerH}" fill="transparent" style="cursor:crosshair"/>`;
+  markup += `<line id="chart-crosshair" x1="0" y1="${PAD.top}" x2="0" y2="${PAD.top + innerH}"
+    stroke="#0f1b2d" stroke-width="1" stroke-dasharray="3,3" opacity="0.3" display="none"/>`;
+  markup += `</svg>`;
+
+  area.innerHTML = markup;
+  const newSvg = area.querySelector("svg");
+  newSvg.id = "chart-svg";
+  newSvg.style.width = "100%";
+  newSvg.style.height = "100%";
+
+  attachChartInteractivity(area, newSvg, W, PAD, innerW, dates, allSeries, xScale,
+    (v) => v === null ? "—" : `${(v * 100).toFixed(1)}%`);
+}
+
+// ── Cumulative returns chart ──────────────────────────────────────────────────
+
+function drawCumulativeReturns(correlationData, weights, activeSeries) {
+  lockedSeries = null;
+  const area = document.getElementById("chart-area");
+  const W = area.clientWidth || 800;
+  const H = area.clientHeight || 500;
+  const PAD = { top: 24, right: 48, bottom: 48, left: 68 };
+  const innerW = W - PAD.left - PAD.right;
+  const innerH = H - PAD.top - PAD.bottom;
+
+  const tickers = Object.keys(weights);
+  const dates = correlationData.daily_returns[tickers[0]].dates;
+
+  const assetCumulative = {};
+  tickers.forEach(t => {
+    let cum = 1;
+    assetCumulative[t] = correlationData.daily_returns[t].values.map(v => { cum *= (1 + v); return cum; });
+  });
+
+  const portCumulative = [];
+  let portCum = 1;
+  dates.forEach((d, i) => {
+    const portRet = tickers.reduce((sum, t) => sum + (weights[t] || 0) * correlationData.daily_returns[t].values[i], 0);
+    portCum *= (1 + portRet);
+    portCumulative.push(portCum);
+  });
+
+  const allSeries = [
+    { values: portCumulative, color: "#0f1b2d", width: 2, label: "Portfolio" },
+    ...tickers
+      .filter(t => activeSeries && activeSeries[t])
+      .map(t => ({
+        values: assetCumulative[t],
+        color: GROUP_COLORS[correlationData.assets[t].class?.toLowerCase()]?.border || "#888",
+        width: 1.5,
+        label: correlationData.assets[t].name,
+      })),
+  ];
+
+  const allVals = allSeries.flatMap(s => s.values);
+  const minY = Math.min(...allVals);
+  const maxY = Math.max(...allVals);
+  const padY = (maxY - minY) * 0.06;
+  const lo = minY - padY;
+  const hi = maxY + padY;
+
+  const xScale = i => PAD.left + (i / (dates.length - 1)) * innerW;
+  const yScale = v => PAD.top + innerH - ((v - lo) / (hi - lo)) * innerH;
+
+  const yTicks = 5;
+  const yTickVals = Array.from({ length: yTicks + 1 }, (_, i) => lo + (hi - lo) * (i / yTicks));
+
+  const formatYLabel = v => {
+    const pct = ((v - 1) * 100).toFixed(0);
+    return pct >= 0 ? `+${pct}%` : `${pct}%`;
+  };
+
+  let markup = buildSVGScaffold(W, H, PAD, innerW, innerH, yTickVals, yScale, xScale,
+    buildXTicks(dates), formatYLabel);
+
+  allSeries.forEach(series => {
+    const points = series.values.map((v, i) => `${xScale(i).toFixed(1)},${yScale(v).toFixed(1)}`).join(" ");
+    markup += `<polyline data-label="${series.label}" data-width="${series.width}" points="${points}"
+      fill="none" stroke="${series.color}" stroke-width="${series.width}"
+      stroke-linejoin="round" stroke-linecap="round" opacity="0.85"/>`;
+  });
+
+  markup += `<rect id="chart-hover-rect" x="${PAD.left}" y="${PAD.top}" width="${innerW}" height="${innerH}" fill="transparent" style="cursor:crosshair"/>`;
+  markup += `<line id="chart-crosshair" x1="0" y1="${PAD.top}" x2="0" y2="${PAD.top + innerH}"
+    stroke="#0f1b2d" stroke-width="1" stroke-dasharray="3,3" opacity="0.3" display="none"/>`;
+  markup += `</svg>`;
+
+  area.innerHTML = markup;
+  const newSvg = area.querySelector("svg");
+  newSvg.id = "chart-svg";
+  newSvg.style.width = "100%";
+  newSvg.style.height = "100%";
+
+  attachChartInteractivity(area, newSvg, W, PAD, innerW, dates, allSeries, xScale, (v) => {
+    const pct = ((v - 1) * 100).toFixed(1);
+    return `<span style="color:${pct >= 0 ? "#2d8a5e" : "#c0385a"}">${pct >= 0 ? "+" : ""}${pct}%</span>`;
+  });
+}
+
+function drawDrawdown(correlationData, weights, activeSeries) {
+  lockedSeries = null;
+  const area = document.getElementById("chart-area");
+  const W = area.clientWidth || 800;
+  const H = area.clientHeight || 500;
+  const PAD = { top: 24, right: 48, bottom: 48, left: 68 };
+  const innerW = W - PAD.left - PAD.right;
+  const innerH = H - PAD.top - PAD.bottom;
+
+  const tickers = Object.keys(weights);
+  const dates = correlationData.daily_returns[tickers[0]].dates;
+
+  function computeDrawdown(cumValues) {
+    let peak = cumValues[0];
+    return cumValues.map(v => {
+      if (v > peak) peak = v;
+      return (v - peak) / peak;
+    });
+  }
+
+  // Portfolio cumulative then drawdown
+  const portCumulative = [];
+  let portCum = 1;
+  dates.forEach((d, i) => {
+    const portRet = tickers.reduce((sum, t) => sum + (weights[t] || 0) * correlationData.daily_returns[t].values[i], 0);
+    portCum *= (1 + portRet);
+    portCumulative.push(portCum);
+  });
+  const portDrawdown = computeDrawdown(portCumulative);
+
+  // Per-asset drawdown
+  const assetDrawdowns = {};
+  tickers.forEach(t => {
+    let cum = 1;
+    const cumVals = correlationData.daily_returns[t].values.map(v => { cum *= (1 + v); return cum; });
+    assetDrawdowns[t] = computeDrawdown(cumVals);
+  });
+
+  const allSeries = [
+    { values: portDrawdown, color: "#0f1b2d", width: 2, label: "Portfolio" },
+    ...tickers
+      .filter(t => activeSeries && activeSeries[t])
+      .map(t => ({
+        values: assetDrawdowns[t],
+        color: GROUP_COLORS[correlationData.assets[t].class?.toLowerCase()]?.border || "#888",
+        width: 1.5,
+        label: correlationData.assets[t].name,
+      })),
+  ];
+
+  const allVals = allSeries.flatMap(s => s.values);
+  const minY = Math.min(...allVals) * 1.08;
+  const maxY = 0;
+
+  const xScale = i => PAD.left + (i / (dates.length - 1)) * innerW;
+  const yScale = v => PAD.top + innerH - ((v - minY) / (maxY - minY)) * innerH;
+
+  const yTicks = 5;
+  const yTickVals = Array.from({ length: yTicks + 1 }, (_, i) => minY + (maxY - minY) * (i / yTicks));
+
+  const formatYLabel = v => {
+    const pct = (v * 100).toFixed(0);
+    return pct >= 0 ? `${pct}%` : `${pct}%`;
+  };
+
+  let markup = buildSVGScaffold(W, H, PAD, innerW, innerH, yTickVals, yScale, xScale,
+    buildXTicks(dates), formatYLabel);
+
+  // Shaded area under portfolio drawdown
+  const portPoints = portDrawdown.map((v, i) => `${xScale(i).toFixed(1)},${yScale(v).toFixed(1)}`).join(" ");
+  const zeroY = yScale(0).toFixed(1);
+  markup += `<polygon points="${PAD.left},${zeroY} ${portPoints} ${PAD.left + innerW},${zeroY}"
+    fill="#0f1b2d" opacity="0.04"/>`;
+
+  // Series lines
+  allSeries.forEach(series => {
+    const points = series.values.map((v, i) => `${xScale(i).toFixed(1)},${yScale(v).toFixed(1)}`).join(" ");
+    markup += `<polyline data-label="${series.label}" data-width="${series.width}" points="${points}"
+      fill="none" stroke="${series.color}" stroke-width="${series.width}"
+      stroke-linejoin="round" stroke-linecap="round" opacity="0.85"/>`;
+  });
+
+  markup += `<rect id="chart-hover-rect" x="${PAD.left}" y="${PAD.top}" width="${innerW}" height="${innerH}" fill="transparent" style="cursor:crosshair"/>`;
+  markup += `<line id="chart-crosshair" x1="0" y1="${PAD.top}" x2="0" y2="${PAD.top + innerH}"
+    stroke="#0f1b2d" stroke-width="1" stroke-dasharray="3,3" opacity="0.3" display="none"/>`;
+  markup += `</svg>`;
+
+  area.innerHTML = markup;
+  const newSvg = area.querySelector("svg");
+  newSvg.id = "chart-svg";
+  newSvg.style.width = "100%";
+  newSvg.style.height = "100%";
+
+  attachChartInteractivity(area, newSvg, W, PAD, innerW, dates, allSeries, xScale, (v) => {
+    const pct = (v * 100).toFixed(1);
+    return `<span style="color:#c0385a">${pct}%</span>`;
+  });
+}
+
+function drawRollingSharpe(correlationData, weights, activeSeries) {
+  lockedSeries = null;
+  const area = document.getElementById("chart-area");
+  const W = area.clientWidth || 800;
+  const H = area.clientHeight || 500;
+  const PAD = { top: 24, right: 48, bottom: 48, left: 68 };
+  const innerW = W - PAD.left - PAD.right;
+  const innerH = H - PAD.top - PAD.bottom;
+
+  const SHARPE_WINDOW = 90;
+  const RF_DAILY = 0.026 / 252;
+  const tickers = Object.keys(weights);
+  const dates = correlationData.daily_returns[tickers[0]].dates;
+
+  function rollingSharpe(values, window = SHARPE_WINDOW) {
+    return values.map((_, i) => {
+      if (i < window - 1) return null;
+      const slice = values.slice(i - window + 1, i + 1);
+      const mean = slice.reduce((a, b) => a + b, 0) / slice.length;
+      const variance = slice.reduce((a, b) => a + (b - mean) ** 2, 0) / (slice.length - 1);
+      const vol = Math.sqrt(variance * TRADING_DAYS);
+      const annRet = (mean - RF_DAILY) * TRADING_DAYS;
+      return vol === 0 ? null : annRet / vol;
+    });
+  }
+
+  // Portfolio daily returns then rolling sharpe
+  const portReturns = dates.map((d, i) =>
+    tickers.reduce((sum, t) => sum + (weights[t] || 0) * correlationData.daily_returns[t].values[i], 0)
+  );
+  const portSharpe = rollingSharpe(portReturns);
+
+  // Per-asset rolling sharpe
+  const assetSharpes = {};
+  tickers.forEach(t => {
+    assetSharpes[t] = rollingSharpe(correlationData.daily_returns[t].values);
+  });
+
+  const allSeries = [
+    { values: portSharpe, color: "#0f1b2d", width: 2, label: "Portfolio" },
+    ...tickers
+      .filter(t => activeSeries && activeSeries[t])
+      .map(t => ({
+        values: assetSharpes[t],
+        color: GROUP_COLORS[correlationData.assets[t].class?.toLowerCase()]?.border || "#888",
+        width: 1.5,
+        label: correlationData.assets[t].name,
+      })),
+  ];
+
+  const validVals = allSeries.flatMap(s => s.values.filter(v => v !== null));
+  const rawMin = Math.min(...validVals);
+  const rawMax = Math.max(...validVals);
+  const padY = (rawMax - rawMin) * 0.08;
+  const minY = rawMin - padY;
+  const maxY = rawMax + padY;
+
+  const xScale = i => PAD.left + (i / (dates.length - 1)) * innerW;
+  const yScale = v => PAD.top + innerH - ((v - minY) / (maxY - minY)) * innerH;
+
+  const yTicks = 5;
+  const yTickVals = Array.from({ length: yTicks + 1 }, (_, i) => minY + (maxY - minY) * (i / yTicks));
+
+  let markup = buildSVGScaffold(W, H, PAD, innerW, innerH, yTickVals, yScale, xScale,
+    buildXTicks(dates), v => v.toFixed(1));
+
+  // Zero line
+  if (minY < 0 && maxY > 0) {
+    const zeroY = yScale(0);
+    markup += `<line x1="${PAD.left}" y1="${zeroY}" x2="${PAD.left + innerW}" y2="${zeroY}"
+      stroke="#0f1b2d" stroke-width="1" opacity="0.15"/>`;
+  }
+
+  // Series lines — split at nulls
+  allSeries.forEach(series => {
+    let segments = [];
+    let current = [];
+    series.values.forEach((v, i) => {
+      if (v === null) {
+        if (current.length) { segments.push(current); current = []; }
+      } else {
+        current.push(`${xScale(i).toFixed(1)},${yScale(v).toFixed(1)}`);
+      }
+    });
+    if (current.length) segments.push(current);
+
+    segments.forEach(seg => {
+      markup += `<polyline data-label="${series.label}" data-width="${series.width}" points="${seg.join(" ")}"
+        fill="none" stroke="${series.color}" stroke-width="${series.width}"
+        stroke-linejoin="round" stroke-linecap="round" opacity="0.85"/>`;
+    });
+  });
+
+  markup += `<rect id="chart-hover-rect" x="${PAD.left}" y="${PAD.top}" width="${innerW}" height="${innerH}" fill="transparent" style="cursor:crosshair"/>`;
+  markup += `<line id="chart-crosshair" x1="0" y1="${PAD.top}" x2="0" y2="${PAD.top + innerH}"
+    stroke="#0f1b2d" stroke-width="1" stroke-dasharray="3,3" opacity="0.3" display="none"/>`;
+  markup += `</svg>`;
+
+  area.innerHTML = markup;
+  const newSvg = area.querySelector("svg");
+  newSvg.id = "chart-svg";
+  newSvg.style.width = "100%";
+  newSvg.style.height = "100%";
+
+  attachChartInteractivity(area, newSvg, W, PAD, innerW, dates, allSeries, xScale, (v) => {
+    if (v === null) return "—";
+    const col = v >= 1 ? "#2d8a5e" : v >= 0 ? "#888" : "#c0385a";
+    return `<span style="color:${col}">${v.toFixed(2)}</span>`;
+  });
+}
+
+// ── Correlation matrix ────────────────────────────────────────────────────────
 
 function drawCorrelationMatrix(correlationData) {
   const area = document.getElementById("chart-area");
@@ -56,12 +571,10 @@ function drawCorrelationMatrix(correlationData) {
 
   const cols = tickers.length;
   let html = `<div style="display:grid;grid-template-columns:44px repeat(${cols},1fr);grid-template-rows:28px repeat(${cols},1fr);gap:4px;padding:24px 28px;width:100%;height:100%;box-sizing:border-box;">`;
-
   html += `<div></div>`;
   tickerLabels.forEach(l => {
     html += `<div style="display:flex;align-items:center;justify-content:center;font-size:10px;color:#a0a8b0;font-family:Inter,sans-serif;">${l}</div>`;
   });
-
   tickers.forEach((rowT, i) => {
     html += `<div style="display:flex;align-items:center;justify-content:flex-end;padding-right:8px;font-size:10px;color:#a0a8b0;font-family:Inter,sans-serif;">${tickerLabels[i]}</div>`;
     tickers.forEach(colT => {
@@ -75,12 +588,16 @@ function drawCorrelationMatrix(correlationData) {
       }
     });
   });
-
   html += `</div>`;
   area.innerHTML = html;
 }
 
-function buildToggles(correlationData, assetSeries, port) {
+// ── Toggles ───────────────────────────────────────────────────────────────────
+
+let activeAssets = new Set();
+
+function buildToggles(assetSeries, getCurrentChart, redraw) {
+  activeAssets = new Set();
   const wrap = document.getElementById("chart-toggles");
   wrap.innerHTML = "";
 
@@ -89,6 +606,7 @@ function buildToggles(correlationData, assetSeries, port) {
   portBtn.dataset.ticker = "portfolio";
   portBtn.innerHTML = `<span class="toggle-dot" style="background:#0f1b2d"></span>Portfolio`;
   portBtn.style.borderColor = "#0f1b2d";
+  portBtn.style.color = "var(--ink)";
   wrap.appendChild(portBtn);
 
   Object.entries(assetSeries).forEach(([ticker, series]) => {
@@ -106,15 +624,13 @@ function buildToggles(correlationData, assetSeries, port) {
         btn.classList.add("active");
         btn.style.borderColor = series.color;
       }
-      const activeSeries = {};
-      activeAssets.forEach(t => { activeSeries[t] = assetSeries[t]; });
-      drawChart(port, activeSeries, correlationData);
+      redraw();
     });
     wrap.appendChild(btn);
   });
 }
 
-let activeAssets = new Set();
+// ── Main export ───────────────────────────────────────────────────────────────
 
 export function openChartView(correlationData, weights, setView) {
   setView("chart");
@@ -132,11 +648,24 @@ export function openChartView(correlationData, weights, setView) {
       };
     });
 
-    activeAssets = new Set();
-    buildToggles(correlationData, assetSeries, port);
-    drawChart(port, {}, correlationData);
+    let currentChart = "vol";
 
-    // Tab switching
+    function getActiveSeries() {
+      const s = {};
+      activeAssets.forEach(t => { s[t] = assetSeries[t]; });
+      return s;
+    }
+
+    function redraw() {
+      if (currentChart === "vol") drawChart(port, getActiveSeries(), correlationData);
+      else if (currentChart === "returns") drawCumulativeReturns(correlationData, weights, getActiveSeries());
+      else if (currentChart === "drawdown") drawDrawdown(correlationData, weights, getActiveSeries());
+      else if (currentChart === "corr") drawCorrelationMatrix(correlationData);
+      else if (currentChart === "sharpe") drawRollingSharpe(correlationData, weights, getActiveSeries());
+    }
+
+    buildToggles(assetSeries, () => currentChart, redraw);
+
     const tabs = document.querySelectorAll(".chart-tab");
     const indicator = document.getElementById("chart-tab-indicator");
     const togglesWrap = document.getElementById("chart-toggles");
@@ -159,23 +688,14 @@ export function openChartView(correlationData, weights, setView) {
         tabs.forEach(t => t.classList.remove("active"));
         tab.classList.add("active");
         moveIndicator(tab);
-
-        const type = tab.dataset.chart;
-        document.getElementById("chart-title").textContent = titles[type];
-        togglesWrap.style.display = type === "corr" ? "none" : "flex";
-
-        if (type === "vol") {
-          const activeSeries = {};
-          activeAssets.forEach(t => { activeSeries[t] = assetSeries[t]; });
-          drawChart(port, activeSeries, correlationData);
-        } else if (type === "corr") {
-          drawCorrelationMatrix(correlationData);
-        }
-        // returns, drawdown, sharpe — coming soon
+        currentChart = tab.dataset.chart;
+        document.getElementById("chart-title").textContent = titles[currentChart];
+        togglesWrap.style.display = currentChart === "corr" ? "none" : "flex";
+        redraw();
       });
     });
 
-    // Reset to vol tab and init indicator on open
+    // Init
     tabs.forEach(t => t.classList.remove("active"));
     const volTab = document.querySelector('.chart-tab[data-chart="vol"]');
     if (volTab) {
@@ -184,166 +704,6 @@ export function openChartView(correlationData, weights, setView) {
     }
     togglesWrap.style.display = "flex";
     document.getElementById("chart-title").textContent = titles.vol;
-  });
-}
-
-function drawChart(port, assetSeries, correlationData) {
-  const area = document.getElementById("chart-area");
-  const W = area.clientWidth || 800;
-  const H = area.clientHeight || 500;
-  const PAD = { top: 24, right: 48, bottom: 48, left: 62 };
-  const innerW = W - PAD.left - PAD.right;
-  const innerH = H - PAD.top - PAD.bottom;
-
-  const allSeries = [
-    { dates: port.dates, values: port.values, color: "#0f1b2d", width: 2, label: "Portfolio" },
-    ...Object.entries(assetSeries).map(([t, s]) => ({
-      dates: s.dates, values: s.values, color: s.color, width: 1.5, label: s.name,
-    })),
-  ];
-
-  const dates = port.dates;
-  const validVals = allSeries.flatMap(s => s.values.filter(v => v !== null));
-  const minY = 0;
-  const maxY = Math.max(...validVals) * 1.08;
-
-  const xScale = i => PAD.left + (i / (dates.length - 1)) * innerW;
-  const yScale = v => PAD.top + innerH - ((v - minY) / (maxY - minY)) * innerH;
-
-  const portValid = port.values.filter(v => v !== null);
-  const avgVol = portValid.reduce((a, b) => a + b, 0) / portValid.length;
-
-  const yTicks = 5;
-  const yTickVals = Array.from({ length: yTicks + 1 }, (_, i) =>
-    minY + (maxY - minY) * (i / yTicks)
-  );
-
-  const xTicks = [];
-  let lastYear = null;
-  dates.forEach((d, i) => {
-    const year = d.slice(0, 4);
-    if (
-      (d.endsWith("-01-01") || d.endsWith("-01-02") || d.endsWith("-01-03")) &&
-      year !== lastYear
-    ) {
-      xTicks.push({ i, label: year });
-      lastYear = year;
-    }
-  });
-
-  const filteredXTicks = xTicks.length > 6
-    ? xTicks.filter((_, i) => i % 2 === 0)
-    : xTicks;
-
-  let markup = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`;
-
-  yTickVals.forEach(v => {
-    const y = yScale(v);
-    const isZero = Math.abs(v) < 0.0001;
-    markup += `<line x1="${PAD.left}" y1="${y}" x2="${PAD.left + innerW}" y2="${y}"
-      stroke="#e8e8e0" stroke-width="${isZero ? 1.5 : 1}" stroke-dasharray="${isZero ? "none" : "3,4"}"/>`;
-  });
-
-  const avgY = yScale(avgVol);
-  markup += `<line x1="${PAD.left}" y1="${avgY}" x2="${PAD.left + innerW}" y2="${avgY}"
-    stroke="#0f1b2d" stroke-width="1" stroke-dasharray="6,4" opacity="0.25"/>`;
-  markup += `<text x="${PAD.left + innerW + 6}" y="${avgY + 4}"
-    font-family="Inter, sans-serif" font-size="9" fill="#0f1b2d" opacity="0.4">avg</text>`;
-
-  yTickVals.forEach(v => {
-    const y = yScale(v);
-    markup += `<text x="${PAD.left - 8}" y="${y + 4}" text-anchor="end"
-      font-family="Inter, sans-serif" font-size="10" fill="#a0a8b0">
-      ${(v * 100).toFixed(0)}%
-    </text>`;
-  });
-
-  filteredXTicks.forEach(({ i, label }) => {
-    const x = xScale(i);
-    markup += `<text x="${x}" y="${PAD.top + innerH + 20}" text-anchor="middle"
-      font-family="Inter, sans-serif" font-size="10" fill="#a0a8b0">${label}</text>`;
-    markup += `<line x1="${x}" y1="${PAD.top}" x2="${x}" y2="${PAD.top + innerH}"
-      stroke="#e8e8e0" stroke-width="1"/>`;
-  });
-
-  allSeries.forEach(series => {
-    let segments = [];
-    let current = [];
-    series.values.forEach((v, i) => {
-      if (v === null) {
-        if (current.length) { segments.push(current); current = []; }
-      } else {
-        current.push(`${xScale(i).toFixed(1)},${yScale(v).toFixed(1)}`);
-      }
-    });
-    if (current.length) segments.push(current);
-
-    segments.forEach(seg => {
-      markup += `<polyline points="${seg.join(" ")}"
-        fill="none" stroke="${series.color}" stroke-width="${series.width}"
-        stroke-linejoin="round" stroke-linecap="round" opacity="0.85"/>`;
-    });
-  });
-
-  markup += `<line x1="${PAD.left}" y1="${PAD.top}" x2="${PAD.left}" y2="${PAD.top + innerH}"
-    stroke="#dde0e4" stroke-width="1"/>`;
-  markup += `<line x1="${PAD.left}" y1="${PAD.top + innerH}" x2="${PAD.left + innerW}" y2="${PAD.top + innerH}"
-    stroke="#dde0e4" stroke-width="1"/>`;
-
-  markup += `<rect id="chart-hover-rect" x="${PAD.left}" y="${PAD.top}"
-    width="${innerW}" height="${innerH}" fill="transparent" style="cursor:crosshair"/>`;
-  markup += `<line id="chart-crosshair" x1="0" y1="${PAD.top}" x2="0" y2="${PAD.top + innerH}"
-    stroke="#0f1b2d" stroke-width="1" stroke-dasharray="3,3" opacity="0.3" display="none"/>`;
-
-  markup += `</svg>`;
-
-  area.innerHTML = markup;
-  const newSvg = area.querySelector("svg");
-  newSvg.id = "chart-svg";
-  newSvg.style.width = "100%";
-  newSvg.style.height = "100%";
-
-  const tooltip = document.getElementById("chart-tooltip");
-  const hoverRect = newSvg.getElementById("chart-hover-rect");
-  const crosshair = newSvg.getElementById("chart-crosshair");
-
-  hoverRect.addEventListener("mousemove", e => {
-    const rect = newSvg.getBoundingClientRect();
-    const scaleX = W / rect.width;
-    const mouseX = (e.clientX - rect.left) * scaleX;
-    const relX = mouseX - PAD.left;
-    const idx = Math.round((relX / innerW) * (dates.length - 1));
-    if (idx < 0 || idx >= dates.length) return;
-
-    const x = xScale(idx);
-    crosshair.setAttribute("x1", x);
-    crosshair.setAttribute("x2", x);
-    crosshair.setAttribute("display", "inline");
-
-    const date = dates[idx];
-    let html = `<div style="font-size:10px;color:#a0a8b0;margin-bottom:5px;">${date}</div>`;
-    allSeries.forEach(s => {
-      const v = s.values[idx];
-      if (v === null) return;
-      html += `<div style="display:flex;justify-content:space-between;gap:16px;margin-bottom:2px;">
-        <span style="color:${s.color};font-weight:600;">${s.label}</span>
-        <span>${(v * 100).toFixed(1)}%</span>
-      </div>`;
-    });
-
-    tooltip.innerHTML = html;
-    tooltip.style.display = "block";
-
-    const areaRect = area.getBoundingClientRect();
-    const tipX = e.clientX - areaRect.left + 12;
-    const tipY = e.clientY - areaRect.top - 20;
-    const flipLeft = tipX + 160 > areaRect.width;
-    tooltip.style.left = flipLeft ? `${tipX - 180}px` : `${tipX}px`;
-    tooltip.style.top = `${Math.max(8, tipY)}px`;
-  });
-
-  hoverRect.addEventListener("mouseleave", () => {
-    crosshair.setAttribute("display", "none");
-    tooltip.style.display = "none";
+    drawChart(port, {}, correlationData);
   });
 }

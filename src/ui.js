@@ -649,13 +649,13 @@ export function buildStatsPanel(stats) {
       label: "Sharpe ratio",
       value: fmtRatio(stats.sharpe),
       color: color(Number.isFinite(stats.sharpe) ? stats.sharpe - 1 : NaN),
-      tooltip: "Sharpe = (CAGR − Rf) / Realised Vol, Rf = 5.25%",
+      tooltip: "Sharpe = (CAGR − Rf) / Realised Vol, Rf = 2.6%",
     },
     {
       label: "Sortino ratio",
       value: fmtRatio(stats.sortino),
       color: color(Number.isFinite(stats.sortino) ? stats.sortino - 1 : NaN),
-      tooltip: "Sortino = (CAGR − Rf) / Downside Vol",
+      tooltip: "Sortino = (CAGR − Rf) / Downside Vol, Rf = 2.6%",
     },
     {
       label: "Mean Corr",

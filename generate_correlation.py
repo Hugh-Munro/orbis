@@ -20,7 +20,7 @@ except ImportError:
 
 START = "2021-01-01"
 END   = "2026-01-01"
-RF    = 0.0525  # risk-free rate (annualised)
+RF    = 0.026  # risk-free rate (annualised)
 
 ASSETS = {
     "VWRL.L":  {"name": "Global Equity ETF",  "class": "Equity",    "paradigm": "Risk-On"},

@@ -1,4 +1,4 @@
-const RISK_FREE_RATE = 0.0525; // US 3M T-bill average 2021-2024
+const RISK_FREE_RATE = 0.026; // US 3M T-bill average 2021-2024
 
 function activeAssetEntries(correlationData, selectedTickers) {
   const all = Object.entries(correlationData.assets);
