@@ -28,17 +28,42 @@ export function buildSidebar(app, nodes) {
   });
 }
 
-export function buildLegend() {
+// Turns the Risk Regime filter buttons into a live exposure readout — each
+// button shows what share of current portfolio weight sits in that regime,
+// not just a static filter label.
+export function updateRegimeWeights(nodes, weights) {
+  const totals = {};
+  nodes.forEach(n => {
+    totals[n.paradigm] = (totals[n.paradigm] || 0) + ((weights && weights[n.id]) || 0);
+  });
+  document.querySelectorAll('.pf-btn:not([data-filter="none"])').forEach(btn => {
+    let pctEl = btn.querySelector(".pf-btn-weight");
+    if (!pctEl) {
+      pctEl = document.createElement("span");
+      pctEl.className = "pf-btn-weight";
+      btn.appendChild(pctEl);
+    }
+    const pct = totals[btn.dataset.filter] || 0;
+    pctEl.textContent = Math.round(pct * 100) + "%";
+  });
+}
+
+export function buildLegend(app) {
   const container = document.getElementById("legend-items");
   container.innerHTML = "";
   Object.entries(GROUP_COLORS).forEach(([group, c]) => {
     const item = document.createElement("div");
     item.className = "legend-item";
+    item.dataset.group = group;
     const dot = document.createElement("div");
     dot.className = "legend-dot";
     dot.style.background = c.bg;
     dot.style.border = `2px solid ${c.border}`;
     item.append(dot, document.createTextNode(formatGroupName(group)));
+    item.addEventListener("click", () => {
+      const turningOn = !item.classList.contains("active");
+      setClassFilter(app, turningOn ? group : null, item);
+    });
     container.appendChild(item);
   });
 }
@@ -87,7 +112,7 @@ export function buildUniversePanel(app, nodes, onUniverseChange) {
     <label class="universe-row" data-ticker="${n.id}">
       <input type="checkbox" class="universe-checkbox" data-ticker="${n.id}" checked>
       <span class="universe-name">${n.label}</span>
-      <span class="universe-class">${n.assetClass}</span>
+      <span class="universe-class">${n.id}</span>
     </label>
   `).join("");
 
@@ -138,6 +163,16 @@ export function buildWeightingPanel(app, correlationData, onWeightsChange) {
     const activeTab = document.querySelector(".wt-tab.active");
     if (activeTab) moveIndicator(activeTab);
   });
+
+  // Google Fonts loads async — an initial measurement can land before Inter
+  // swaps in, leaving the pill sized to fallback-font metrics. Re-measure
+  // once webfonts are actually ready.
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(() => {
+      const activeTab = document.querySelector(".wt-tab.active");
+      if (activeTab) moveIndicator(activeTab);
+    });
+  }
 
   function activeTickers() {
     return allTickers.filter(t => !app.selectedTickers || app.selectedTickers.has(t));
@@ -296,6 +331,16 @@ export function buildWeightingPanel(app, correlationData, onWeightsChange) {
       if (document.querySelector('.wt-tab[data-scheme="saved"]').classList.contains("active")) {
         renderSavedTab();
       }
+
+      // Quiet confirmation on the button itself — no popup, just a brief
+      // state flip so the action reads as having happened.
+      const originalHtml = btn.innerHTML;
+      btn.classList.add("just-saved");
+      btn.innerHTML = `<i class="ti ti-check" style="font-size:13px;vertical-align:-1px;margin-right:5px"></i>Saved`;
+      setTimeout(() => {
+        btn.classList.remove("just-saved");
+        btn.innerHTML = originalHtml;
+      }, 1300);
     });
   }
 
@@ -328,13 +373,30 @@ export function buildWeightingPanel(app, correlationData, onWeightsChange) {
           cb.closest(".universe-row").classList.toggle("unchecked", !inSet);
         });
         onWeightsChange(normaliseWeights(portfolio.weights, [...app.selectedTickers]));
+
+        // Quiet confirmation — the row and button flash the "ink" state
+        // briefly so loading a portfolio reads as an action, not silence.
+        const row = btn.closest(".saved-portfolio-row");
+        const originalLabel = btn.textContent;
+        row.classList.add("just-loaded");
+        btn.classList.add("just-loaded");
+        btn.textContent = "Loaded";
+        setTimeout(() => {
+          row.classList.remove("just-loaded");
+          btn.classList.remove("just-loaded");
+          btn.textContent = originalLabel;
+        }, 1100);
       });
     });
 
     savedWrap.querySelectorAll(".saved-delete-btn").forEach(btn => {
       btn.addEventListener("click", () => {
-        deletePortfolio(btn.dataset.id);
-        renderSavedTab();
+        const row = btn.closest(".saved-portfolio-row");
+        row.classList.add("removing");
+        row.addEventListener("transitionend", () => {
+          deletePortfolio(btn.dataset.id);
+          renderSavedTab();
+        }, { once: true });
       });
     });
   }
@@ -489,6 +551,10 @@ export function resetView(app) {
   app.cy.animate({ fit: { padding: 40 }, duration: 400, easing: "ease-in-out" });
 }
 
+function clearLegendActive() {
+  document.querySelectorAll(".legend-item.active").forEach(el => el.classList.remove("active"));
+}
+
 export function setFilter(app, key, btn) {
   if (!app.cy) return;
   clearSearch(app);
@@ -497,6 +563,7 @@ export function setFilter(app, key, btn) {
   hideCard(app);
   resetInfoPanel();
   setActiveFilterButton(btn);
+  clearLegendActive();
 
   if (key === "none") return;
 
@@ -518,6 +585,41 @@ export function setFilter(app, key, btn) {
     const srcParadigm = edge.source().data("paradigm");
     const tgtParadigm = edge.target().data("paradigm");
     if (srcParadigm === key && tgtParadigm === key) {
+      edge.addClass("highlighted");
+    } else {
+      edge.addClass("dimmed");
+    }
+  });
+}
+
+export function setClassFilter(app, group, item) {
+  if (!app.cy) return;
+  clearSearch(app);
+  clearFilterClasses(app);
+  clearSelectionClasses(app);
+  hideCard(app);
+  resetInfoPanel();
+
+  const allBtn = document.querySelector('.pf-btn[data-filter="none"]');
+  if (allBtn) setActiveFilterButton(allBtn);
+  clearLegendActive();
+
+  if (group === null) return;
+
+  item.classList.add("active");
+  const c = GROUP_COLORS[group] || GROUP_COLORS.equity;
+
+  app.cy.nodes().forEach(node => {
+    if (node.data("group") === group) {
+      node.data("hl_border", c.border);
+      node.addClass("highlighted");
+    } else {
+      node.addClass("dimmed");
+    }
+  });
+
+  app.cy.edges().forEach(edge => {
+    if (edge.source().data("group") === group && edge.target().data("group") === group) {
       edge.addClass("highlighted");
     } else {
       edge.addClass("dimmed");
@@ -629,7 +731,7 @@ export function showCard(app, data, node) {
 }
 
 export function buildStatsPanel(stats) {
-  const container = document.querySelector("#stats-panel .stats-grid");
+  const container = document.getElementById("stats-panel-body");
   if (!container) return;
 
   function fmtPercent(val, decimals = 2) {
@@ -646,63 +748,112 @@ export function buildStatsPanel(stats) {
     return val >= 0 ? "#2d8a5e" : "#c0385a";
   }
 
-  const rows = [
+  const groups = [
     {
-      label: "CAGR",
-      value: fmtPercent(stats.portfolioReturn),
-      color: color(stats.portfolioReturn),
-      tooltip: "Compound Annual Growth Rate — geometric annualised return per selected weighting",
+      name: "Performance",
+      cols: 2,
+      rows: [
+        {
+          label: "CAGR",
+          value: fmtPercent(stats.portfolioReturn),
+          color: color(stats.portfolioReturn),
+          tooltip: "Compound Annual Growth Rate — geometric annualised return per selected weighting",
+        },
+        {
+          label: "Sharpe ratio",
+          value: fmtRatio(stats.sharpe),
+          color: color(Number.isFinite(stats.sharpe) ? stats.sharpe - 1 : NaN),
+          tooltip: "Sharpe = (CAGR − Rf) / Realised Vol, Rf = 2.6%",
+        },
+        {
+          label: "Sortino ratio",
+          value: fmtRatio(stats.sortino),
+          color: color(Number.isFinite(stats.sortino) ? stats.sortino - 1 : NaN),
+          tooltip: "Sortino = (CAGR − Rf) / Downside Vol, Rf = 2.6%",
+        },
+        {
+          label: "PSR",
+          value: Number.isFinite(stats.psr) ? (stats.psr * 100).toFixed(1) + "%" : "—",
+          color: Number.isFinite(stats.psr)
+            ? (stats.psr >= 0.95 ? "#2d8a5e" : "#c0385a")
+            : "#a0a8b0",
+          tooltip: "Probabilistic Sharpe Ratio (Bailey & Lopez de Prado) — confidence that the true daily Sharpe exceeds 0, correcting for skew, kurtosis and sample length (n=" + stats.psrObs + " daily obs)",
+        },
+      ],
     },
     {
-      label: "Realised Vol",
-      value: Number.isFinite(stats.portfolioVol) ? (stats.portfolioVol * 100).toFixed(1) + "%" : "—",
-      color: "#555",
-      tooltip: "Annualised realised volatility of the portfolio (√wᵀΣw)",
+      name: "Distribution",
+      cols: 3,
+      rows: [
+        {
+          label: "Realised Vol",
+          value: Number.isFinite(stats.portfolioVol) ? (stats.portfolioVol * 100).toFixed(1) + "%" : "—",
+          color: "#555",
+          tooltip: "Annualised realised volatility of the portfolio (√wᵀΣw)",
+        },
+        {
+          label: "Skew",
+          value: fmtRatio(stats.skew),
+          color: Number.isFinite(stats.skew)
+            ? (stats.skew >= 0 ? "#2d8a5e" : "#c0385a")
+            : "#a0a8b0",
+          tooltip: "Sample skewness of daily portfolio returns — positive means a fatter right tail (occasional large gains), negative means a fatter left tail (occasional large losses)",
+        },
+        {
+          label: "Kurtosis",
+          value: fmtRatio(stats.kurtosis),
+          color: Number.isFinite(stats.kurtosis)
+            ? (stats.kurtosis > 0 ? "#c0385a" : "#2d8a5e")
+            : "#a0a8b0",
+          tooltip: "Excess kurtosis of daily portfolio returns — positive means fatter tails than a normal distribution (more extreme days than the vol number alone implies)",
+        },
+      ],
     },
     {
-      label: "Sharpe ratio",
-      value: fmtRatio(stats.sharpe),
-      color: color(Number.isFinite(stats.sharpe) ? stats.sharpe - 1 : NaN),
-      tooltip: "Sharpe = (CAGR − Rf) / Realised Vol, Rf = 2.6%",
-    },
-    {
-      label: "Sortino ratio",
-      value: fmtRatio(stats.sortino),
-      color: color(Number.isFinite(stats.sortino) ? stats.sortino - 1 : NaN),
-      tooltip: "Sortino = (CAGR − Rf) / Downside Vol, Rf = 2.6%",
-    },
-    {
-      label: "Mean Corr",
-      value: fmtRatio(stats.avgCorrelation),
-      color: Number.isFinite(stats.avgCorrelation)
-        ? (stats.avgCorrelation > 0.5 ? "#c0385a" : "#2d8a5e")
-        : "#a0a8b0",
-      tooltip: "Mean pairwise correlation across all asset pairs in the portfolio",
-    },
-    {
-      label: "Max drawdown",
-      value: Number.isFinite(stats.maxDrawdown) ? (stats.maxDrawdown * 100).toFixed(1) + "%" : "—",
-      color: "#c0385a",
-      tooltip: "Weighted average of individual asset maximum drawdowns",
-    },
-    {
-      label: "VaR",
-      value: Number.isFinite(stats.var95) ? (stats.var95 * 100).toFixed(1) + "%" : "—",
-      color: "#c0385a",
-      tooltip: "Value at Risk — 95% confidence, 1-day horizon. 5% chance of a one-day loss exceeding this, based on the full historical return series",
-    },
-    {
-      label: "CVaR",
-      value: Number.isFinite(stats.cvar95) ? (stats.cvar95 * 100).toFixed(1) + "%" : "—",
-      color: "#c0385a",
-      tooltip: "Conditional Value at Risk (Expected Shortfall) — 95% confidence, 1-day horizon. Average one-day loss on the worst 5% of days",
+      name: "Risk",
+      cols: 2,
+      rows: [
+        {
+          label: "Max drawdown",
+          value: Number.isFinite(stats.maxDrawdown) ? (stats.maxDrawdown * 100).toFixed(1) + "%" : "—",
+          color: "#c0385a",
+          tooltip: "Weighted average of individual asset maximum drawdowns",
+        },
+        {
+          label: "VaR",
+          value: Number.isFinite(stats.var95) ? (stats.var95 * 100).toFixed(1) + "%" : "—",
+          color: "#c0385a",
+          tooltip: "Value at Risk — 95% confidence, 1-day horizon. 5% chance of a one-day loss exceeding this, based on the full historical return series",
+        },
+        {
+          label: "CVaR",
+          value: Number.isFinite(stats.cvar95) ? (stats.cvar95 * 100).toFixed(1) + "%" : "—",
+          color: "#c0385a",
+          tooltip: "Conditional Value at Risk (Expected Shortfall) — 95% confidence, 1-day horizon. Average one-day loss on the worst 5% of days",
+        },
+        {
+          label: "Mean Corr",
+          value: fmtRatio(stats.avgCorrelation),
+          color: Number.isFinite(stats.avgCorrelation)
+            ? (stats.avgCorrelation > 0.5 ? "#c0385a" : "#2d8a5e")
+            : "#a0a8b0",
+          tooltip: "Mean pairwise correlation across all asset pairs in the portfolio",
+        },
+      ],
     },
   ];
 
-  container.innerHTML = rows.map(row => `
-    <div class="stat-item" title="${row.tooltip}">
-      <div class="stat-label">${row.label}</div>
-      <div class="stat-value" style="color:${row.color}">${row.value}</div>
+  container.innerHTML = groups.map(group => `
+    <div class="stats-group">
+      <div class="stats-group-label">${group.name}</div>
+      <div class="stats-grid stats-grid-${group.cols}">
+        ${group.rows.map(row => `
+          <div class="stat-item" title="${row.tooltip}">
+            <div class="stat-label">${row.label}</div>
+            <div class="stat-value" style="color:${row.color}">${row.value}</div>
+          </div>
+        `).join("")}
+      </div>
     </div>
   `).join("");
 }

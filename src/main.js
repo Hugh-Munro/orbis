@@ -1,6 +1,6 @@
 import { loadCorrelationData, parseGraphData, degreeMap, validateGraphData } from "./data.js";
 import { createGraph, setupGraphEvents, setNodeUniverseVisibility } from "./graph.js";
-import { buildSidebar, buildLegend, buildStatsPanel, buildWeightingPanel, buildUniversePanel, buildPortfolioValuePanel, setPortfolioValueDisplay, resetView, setFilter } from "./ui.js";
+import { buildSidebar, buildLegend, buildStatsPanel, buildWeightingPanel, buildUniversePanel, buildPortfolioValuePanel, setPortfolioValueDisplay, resetView, setFilter, updateRegimeWeights } from "./ui.js";
 import { setupSearch } from "./search.js";
 import { computePortfolioStats, computeEqualWeights, computeInverseVolWeights } from "./stats.js";
 import { openChartView } from "./chart.js";
@@ -45,7 +45,7 @@ async function init() {
     const deg = degreeMap(nodes, edges);
 
     buildSidebar(app, nodes);
-    buildLegend();
+    buildLegend(app);
 
     app.cy = createGraph(app, nodes, edges, deg);
 
@@ -67,7 +67,8 @@ async function init() {
 
       const stats = computePortfolioStats(correlationData, weights);
       buildStatsPanel(stats);
-      
+      updateRegimeWeights(nodes, weights);
+
       document.querySelectorAll(".stat-item").forEach(tile => {
         tile.style.cursor = "pointer";
         tile.addEventListener("click", () => {
