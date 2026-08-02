@@ -117,13 +117,15 @@ export function buildUniversePanel(app, nodes, onUniverseChange) {
   }
 }
 
+import { savePortfolio, getSavedPortfolios, deletePortfolio } from "./savedPortfolios.js";
+
 export function buildWeightingPanel(app, correlationData, onWeightsChange) {
   const tabs = document.querySelectorAll(".wt-tab");
   const customWrap = document.getElementById("custom-weights-wrap");
+  const savedWrap = document.getElementById("saved-portfolios-wrap");
   const indicator = document.getElementById("weight-tab-indicator");
   const allTickers = Object.keys(correlationData.assets);
 
-  app.valueMode = "value";
   let customMode = "weights";
 
   function moveIndicator(tab) {
@@ -141,11 +143,53 @@ export function buildWeightingPanel(app, correlationData, onWeightsChange) {
     return allTickers.filter(t => !app.selectedTickers || app.selectedTickers.has(t));
   }
 
-  function renderCustomWeightSliders(initialWeights) {
+  // Normalises any raw (possibly non-summing-to-1) weight map to sum to 1
+  // across exactly the active tickers. Missing tickers default to 0.
+  function normaliseWeights(rawWeights, tickers) {
+    let total = 0;
+    tickers.forEach(t => { total += rawWeights[t] || 0; });
+    const safeTotal = total || 1;
+    return Object.fromEntries(tickers.map(t => [t, (rawWeights[t] || 0) / safeTotal]));
+  }
+
+  // Single source of truth for the custom tab: always reads from app.weights,
+  // never resets. Switching between % and Shares is a pure display transform —
+  // both views represent the exact same underlying weights until the person
+  // actually edits something.
+  function renderCustomTab() {
     const tickers = activeTickers();
-    customWrap.innerHTML = tickers.map(t => {
+    // If app.weights doesn't yet cover the active universe (e.g. just switched
+    // schemes), fall back to equal split as a starting point — but this only
+    // happens once, not on every tab click.
+    const baseWeights = tickers.every(t => app.weights && Number.isFinite(app.weights[t]))
+      ? app.weights
+      : Object.fromEntries(tickers.map(t => [t, 1 / tickers.length]));
+
+    if (customMode === "shares") {
+      renderShareInputs(baseWeights, tickers);
+    } else {
+      renderWeightSliders(baseWeights, tickers);
+    }
+  }
+
+  function renderWeightSliders(weights, tickers) {
+    customWrap.innerHTML = `
+      <div class="mode-toggle" id="custom-mode-toggle">
+        <button type="button" class="mode-btn active" data-mode="weights">% Weights</button>
+        <button type="button" class="mode-btn" data-mode="shares">Shares</button>
+      </div>
+      <div id="custom-sliders-wrap"></div>
+      <button type="button" id="save-portfolio-btn" class="save-portfolio-btn">
+        <i class="ti ti-device-floppy" style="font-size:13px;vertical-align:-1px;margin-right:5px"></i>Save current
+      </button>
+    `;
+    attachModeToggleListeners();
+    attachSaveButtonListener();
+
+    const slidersWrap = document.getElementById("custom-sliders-wrap");
+    slidersWrap.innerHTML = tickers.map(t => {
       const name = correlationData.assets[t].name;
-      const pct = Math.round((initialWeights[t] || 0) * 100);
+      const pct = Math.round((weights[t] || 0) * 100);
       return `
         <div class="weight-row" data-ticker="${t}">
           <div class="weight-row-label">
@@ -157,7 +201,7 @@ export function buildWeightingPanel(app, correlationData, onWeightsChange) {
       `;
     }).join("");
 
-    customWrap.querySelectorAll(".weight-slider").forEach(slider => {
+    slidersWrap.querySelectorAll(".weight-slider").forEach(slider => {
       slider.addEventListener("input", () => {
         const row = slider.closest(".weight-row");
         row.querySelector(".weight-row-value").textContent = `${slider.value}%`;
@@ -169,47 +213,46 @@ export function buildWeightingPanel(app, correlationData, onWeightsChange) {
   function emitCustomWeights() {
     const tickers = activeTickers();
     const raw = {};
-    let total = 0;
-    customWrap.querySelectorAll(".weight-slider").forEach(slider => {
+    document.querySelectorAll("#custom-sliders-wrap .weight-slider").forEach(slider => {
       if (!tickers.includes(slider.dataset.ticker)) return;
-      const v = Number(slider.value);
-      raw[slider.dataset.ticker] = v;
-      total += v;
+      raw[slider.dataset.ticker] = Number(slider.value);
     });
-    const safeTotal = total || 1;
-    const normalised = Object.fromEntries(
-      tickers.map(t => [t, (raw[t] || 0) / safeTotal])
-    );
-    app.valueMode = "value";
-    onWeightsChange(normalised);
+    onWeightsChange(normaliseWeights(raw, tickers));
   }
 
-  function renderShareInputs(initialShares) {
-    const tickers = activeTickers();
+  function renderShareInputs(weights, tickers) {
+    const portfolioValue = app.portfolioValue || 0;
     customWrap.innerHTML = `
       <div class="mode-toggle" id="custom-mode-toggle">
-        <button type="button" class="mode-btn ${customMode === "weights" ? "active" : ""}" data-mode="weights">% Weights</button>
-        <button type="button" class="mode-btn ${customMode === "shares" ? "active" : ""}" data-mode="shares">Shares</button>
+        <button type="button" class="mode-btn" data-mode="weights">% Weights</button>
+        <button type="button" class="mode-btn active" data-mode="shares">Shares</button>
       </div>
-    ` + tickers.map(t => {
+      <div id="custom-shares-wrap"></div>
+      <button type="button" id="save-portfolio-btn" class="save-portfolio-btn">
+        <i class="ti ti-device-floppy" style="font-size:13px;vertical-align:-1px;margin-right:5px"></i>Save current
+      </button>
+    `;
+    attachModeToggleListeners();
+    attachSaveButtonListener();
+
+    const sharesWrap = document.getElementById("custom-shares-wrap");
+    sharesWrap.innerHTML = tickers.map(t => {
       const name = correlationData.assets[t].name;
       const price = correlationData.assets[t].price || 0;
-      const shares = initialShares[t] || 0;
-      const value = shares * price;
+      const dollarValue = (weights[t] || 0) * portfolioValue;
+      const shares = price > 0 ? dollarValue / price : 0;
       return `
         <div class="shares-row" data-ticker="${t}">
           <div class="shares-row-label">
             <span>${name}</span>
-            <span class="shares-row-value">$${Math.round(value).toLocaleString("en-US")}</span>
+            <span class="shares-row-value">$${Math.round(dollarValue).toLocaleString("en-US")}</span>
           </div>
-          <input type="number" min="0" step="1" value="${shares}" class="shares-input" data-ticker="${t}">
+          <input type="number" min="0" step="1" value="${Math.round(shares)}" class="shares-input" data-ticker="${t}">
         </div>
       `;
     }).join("");
 
-    attachModeToggleListeners();
-
-    customWrap.querySelectorAll(".shares-input").forEach(input => {
+    sharesWrap.querySelectorAll(".shares-input").forEach(input => {
       input.addEventListener("input", () => {
         const row = input.closest(".shares-row");
         const ticker = input.dataset.ticker;
@@ -223,79 +266,88 @@ export function buildWeightingPanel(app, correlationData, onWeightsChange) {
 
   function emitSharesWeights() {
     const tickers = activeTickers();
-    const values = {};
-    let total = 0;
-    customWrap.querySelectorAll(".shares-input").forEach(input => {
+    const dollarValues = {};
+    document.querySelectorAll("#custom-shares-wrap .shares-input").forEach(input => {
       if (!tickers.includes(input.dataset.ticker)) return;
       const ticker = input.dataset.ticker;
       const price = correlationData.assets[ticker].price || 0;
       const shares = Number(input.value) || 0;
-      const value = shares * price;
-      values[ticker] = value;
-      total += value;
+      dollarValues[ticker] = shares * price;
     });
-    const safeTotal = total || 1;
-    const weights = Object.fromEntries(
-      tickers.map(t => [t, (values[t] || 0) / safeTotal])
-    );
-    app.valueMode = "shares";
-    app.emergentPortfolioValue = total;
-    onWeightsChange(weights);
+    onWeightsChange(normaliseWeights(dollarValues, tickers));
   }
 
   function attachModeToggleListeners() {
-    customWrap.querySelectorAll(".mode-btn").forEach(btn => {
+    document.querySelectorAll(".mode-btn").forEach(btn => {
       btn.addEventListener("click", () => {
         customMode = btn.dataset.mode;
-        renderCustomTab();
+        renderCustomTab(); // pure re-render of the current app.weights — nothing resets
       });
     });
   }
 
-  function renderCustomTab() {
-    const tickers = activeTickers();
-    if (customMode === "shares") {
-      const initialShares = Object.fromEntries(tickers.map(t => [t, 0]));
-      renderShareInputs(initialShares);
-      emitSharesWeights();
-    } else {
-      customWrap.innerHTML = `
-        <div class="mode-toggle" id="custom-mode-toggle">
-          <button type="button" class="mode-btn active" data-mode="weights">% Weights</button>
-          <button type="button" class="mode-btn" data-mode="shares">Shares</button>
-        </div>
-        <div id="custom-sliders-wrap"></div>
-      `;
-      attachModeToggleListeners();
-      const slidersWrap = document.getElementById("custom-sliders-wrap");
-      const equalStart = Object.fromEntries(tickers.map(t => [t, 1 / tickers.length]));
-      const tempDiv = document.createElement("div");
-      tempDiv.innerHTML = tickers.map(t => {
-        const name = correlationData.assets[t].name;
-        const pct = Math.round(equalStart[t] * 100);
-        return `
-          <div class="weight-row" data-ticker="${t}">
-            <div class="weight-row-label">
-              <span>${name}</span>
-              <span class="weight-row-value">${pct}%</span>
-            </div>
-            <input type="range" min="0" max="100" value="${pct}" class="weight-slider" data-ticker="${t}">
-          </div>
-        `;
-      }).join("");
-      slidersWrap.innerHTML = tempDiv.innerHTML;
-      slidersWrap.querySelectorAll(".weight-slider").forEach(slider => {
-        slider.addEventListener("input", () => {
-          const row = slider.closest(".weight-row");
-          row.querySelector(".weight-row-value").textContent = `${slider.value}%`;
-          emitCustomWeights();
-        });
-      });
-      emitCustomWeights();
+  function attachSaveButtonListener() {
+    const btn = document.getElementById("save-portfolio-btn");
+    if (!btn) return;
+    btn.addEventListener("click", () => {
+      const name = prompt("Name this portfolio:");
+      if (!name || !name.trim()) return;
+      savePortfolio(name.trim(), app.weights, app.selectedTickers);
+      if (document.querySelector('.wt-tab[data-scheme="saved"]').classList.contains("active")) {
+        renderSavedTab();
+      }
+    });
+  }
+
+  function renderSavedTab() {
+    const portfolios = getSavedPortfolios();
+    if (!portfolios.length) {
+      savedWrap.innerHTML = `<p class="saved-empty">No saved portfolios yet. Build one in the Custom tab and hit Save.</p>`;
+      return;
     }
+    savedWrap.innerHTML = portfolios.map(p => `
+      <div class="saved-portfolio-row" data-id="${p.id}">
+        <span class="saved-portfolio-name">${p.name}</span>
+        <button type="button" class="saved-load-btn" data-id="${p.id}">Load</button>
+        <button type="button" class="saved-delete-btn" data-id="${p.id}" title="Delete">
+          <i class="ti ti-trash"></i>
+        </button>
+      </div>
+    `).join("");
+
+    savedWrap.querySelectorAll(".saved-load-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const portfolio = portfolios.find(p => p.id === btn.dataset.id);
+        if (!portfolio) return;
+        // Restore ticker selection, then weights, matching the same path as
+        // any other scheme change.
+        app.selectedTickers = new Set(portfolio.selectedTickers);
+        document.querySelectorAll(".universe-checkbox").forEach(cb => {
+          const inSet = app.selectedTickers.has(cb.dataset.ticker);
+          cb.checked = inSet;
+          cb.closest(".universe-row").classList.toggle("unchecked", !inSet);
+        });
+        onWeightsChange(normaliseWeights(portfolio.weights, [...app.selectedTickers]));
+      });
+    });
+
+    savedWrap.querySelectorAll(".saved-delete-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        deletePortfolio(btn.dataset.id);
+        renderSavedTab();
+      });
+    });
   }
 
   app.onUniverseChangeForCustom = () => {
+    if (document.querySelector('.wt-tab[data-scheme="custom"]').classList.contains("active")) {
+      renderCustomTab();
+    }
+  };
+
+  // Custom tab re-renders (in current display mode) whenever portfolio value
+  // changes, since shares mode depends on it for the $ ↔ share conversion.
+  app.onPortfolioValueChangeForCustom = () => {
     if (document.querySelector('.wt-tab[data-scheme="custom"]').classList.contains("active")) {
       renderCustomTab();
     }
@@ -307,14 +359,17 @@ export function buildWeightingPanel(app, correlationData, onWeightsChange) {
       tab.classList.add("active");
       moveIndicator(tab);
       const scheme = tab.dataset.scheme;
+
+      customWrap.classList.toggle("visible", scheme === "custom");
+      savedWrap.classList.toggle("visible", scheme === "saved");
+
       if (scheme === "custom") {
-        customWrap.classList.add("visible");
-        customMode = "weights";
         renderCustomTab();
+      } else if (scheme === "saved") {
+        savedWrap.innerHTML = "";
+        renderSavedTab();
       } else {
-        customWrap.classList.remove("visible");
         customWrap.innerHTML = "";
-        app.valueMode = "value";
         onWeightsChange(scheme);
       }
     });

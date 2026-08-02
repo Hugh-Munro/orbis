@@ -53,29 +53,21 @@ async function init() {
 
     function refreshStats(weightsOrScheme) {
       let weights;
-
       if (weightsOrScheme === "equal" || weightsOrScheme === "inverse-vol") {
         activeScheme = weightsOrScheme;
       } else if (weightsOrScheme && typeof weightsOrScheme === "object") {
         activeScheme = "custom";
       }
-
       if (activeScheme === "equal") weights = computeEqualWeights(correlationData, app.selectedTickers);
       else if (activeScheme === "inverse-vol") weights = computeInverseVolWeights(correlationData, app.selectedTickers);
       else weights = weightsOrScheme;
 
       app.weights = weights;
-
-      if (app.valueMode === "shares") {
-        app.portfolioValue = app.emergentPortfolioValue || 0;
-        setPortfolioValueDisplay(app.portfolioValue, true);
-      } else {
-        setPortfolioValueDisplay(app.portfolioValue, false);
-      }
+      setPortfolioValueDisplay(app.portfolioValue, false); // always editable now
 
       const stats = computePortfolioStats(correlationData, weights);
       buildStatsPanel(stats);
-
+      
       document.querySelectorAll(".stat-item").forEach(tile => {
         tile.style.cursor = "pointer";
         tile.addEventListener("click", () => {
@@ -94,6 +86,7 @@ async function init() {
 
     buildPortfolioValuePanel(app, () => {
       if (app.cy) app.cy.style().update();
+      if (app.onPortfolioValueChangeForCustom) app.onPortfolioValueChangeForCustom();
     });
 
     buildUniversePanel(app, nodes, () => {
