@@ -1,5 +1,3 @@
-const RISK_FREE_RATE = 0.026; // US 3M T-bill average 2021-2024
-
 function activeAssetEntries(correlationData, selectedTickers) {
   const all = Object.entries(correlationData.assets);
   if (!selectedTickers) return all;
@@ -20,7 +18,45 @@ export function computeInverseVolWeights(correlationData, selectedTickers) {
   return Object.fromEntries(invVols.map(([id, v]) => [id, v / total]));
 }
 
+// Historical VaR / CVaR (95%, 1-day) — reconstructed from actual daily return series
+function computeHistoricalVarCvar(correlationData, weights, tickers) {
+  const dr = correlationData.daily_returns;
+  if (!dr) return { var95: NaN, cvar95: NaN };
+  const dateArrays = tickers.map(t => dr[t] && dr[t].dates);
+  if (dateArrays.some(d => !d)) return { var95: NaN, cvar95: NaN };
+  const referenceDates = dateArrays[0];
+  const sameLength = dateArrays.every(d => d.length === referenceDates.length);
+  if (!sameLength) return { var95: NaN, cvar95: NaN };
+  const n = referenceDates.length;
+  const portfolioSeries = [];
+  for (let i = 0; i < n; i++) {
+    let dayReturn = 0;
+    let valid = true;
+    for (const t of tickers) {
+      const v = dr[t].values[i];
+      if (v === null || v === undefined || Number.isNaN(v)) {
+        valid = false;
+        break;
+      }
+      dayReturn += weights[t] * v;
+    }
+    if (valid) portfolioSeries.push(dayReturn);
+  }
+  if (portfolioSeries.length < 20) return { var95: NaN, cvar95: NaN };
+  portfolioSeries.sort((a, b) => a - b);
+  const idx = Math.max(0, Math.floor(0.05 * portfolioSeries.length) - 1);
+  const var95 = portfolioSeries[idx];
+  const tail = portfolioSeries.slice(0, idx + 1);
+  const cvar95 = tail.reduce((sum, v) => sum + v, 0) / tail.length;
+  return { var95, cvar95 };
+}
+
 export function computePortfolioStats(correlationData, weights) {
+  // Risk-free rate now comes from the data pipeline (FRED DTB3), not a hardcoded
+  // constant. Falls back to the old static value only if the field is missing
+  // (e.g. an older correlation.json generated before this change).
+  const RISK_FREE_RATE = correlationData.riskFreeRate ?? 0.026;
+
   // weights is authoritative for which tickers are "in" — only score what has a weight
   const tickers = Object.keys(weights);
   const assets = tickers.map(t => [t, correlationData.assets[t]]);
@@ -29,7 +65,6 @@ export function computePortfolioStats(correlationData, weights) {
   const returns = Object.fromEntries(assets.map(([id, a]) => [id, a.return]));
   const vols    = Object.fromEntries(assets.map(([id, a]) => [id, a.vol]));
 
-  // Build correlation matrix as nested object (restricted to active tickers)
   const corrMatrix = {};
   tickers.forEach(t => {
     corrMatrix[t] = {};
@@ -44,10 +79,8 @@ export function computePortfolioStats(correlationData, weights) {
     }
   });
 
-  // Portfolio return — weighted average
   const portfolioReturn = tickers.reduce((sum, t) => sum + w[t] * returns[t], 0);
 
-  // Portfolio variance — wᵀΣw where Σ_ij = corr_ij * vol_i * vol_j
   let portfolioVariance = 0;
   tickers.forEach(t => {
     tickers.forEach(u => {
@@ -57,14 +90,11 @@ export function computePortfolioStats(correlationData, weights) {
   });
   const portfolioVol = Math.sqrt(portfolioVariance);
 
-  // Sharpe ratio
   const sharpe = (portfolioReturn - RISK_FREE_RATE) / portfolioVol;
 
-  // Sortino — downside vol approximation: vol * sqrt(0.5)
   const downsideVol = portfolioVol * Math.sqrt(0.5);
   const sortino = (portfolioReturn - RISK_FREE_RATE) / downsideVol;
 
-  // Weighted average pairwise correlation (descriptive, restricted to active tickers)
   const pairs = [];
   tickers.forEach((t, i) => {
     tickers.slice(i + 1).forEach(u => {
@@ -73,9 +103,11 @@ export function computePortfolioStats(correlationData, weights) {
   });
   const avgCorrelation = pairs.length
     ? pairs.reduce((sum, c) => sum + c, 0) / pairs.length
-    : 0; // single-asset universe has no pairs
+    : 0;
 
   const maxDrawdown = tickers.reduce((sum, t) => sum + w[t] * correlationData.assets[t].maxDrawdown, 0);
+
+  const { var95, cvar95 } = computeHistoricalVarCvar(correlationData, w, tickers);
 
   return {
     portfolioReturn,
@@ -84,6 +116,8 @@ export function computePortfolioStats(correlationData, weights) {
     sortino,
     avgCorrelation,
     maxDrawdown,
+    var95,
+    cvar95,
     corrMatrix,
     tickers,
   };

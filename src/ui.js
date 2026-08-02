@@ -630,6 +630,18 @@ export function buildStatsPanel(stats) {
       color: "#c0385a",
       tooltip: "Weighted average of individual asset maximum drawdowns",
     },
+    {
+      label: "VaR",
+      value: Number.isFinite(stats.var95) ? (stats.var95 * 100).toFixed(1) + "%" : "—",
+      color: "#c0385a",
+      tooltip: "Value at Risk — 95% confidence, 1-day horizon. 5% chance of a one-day loss exceeding this, based on the full historical return series",
+    },
+    {
+      label: "CVaR",
+      value: Number.isFinite(stats.cvar95) ? (stats.cvar95 * 100).toFixed(1) + "%" : "—",
+      color: "#c0385a",
+      tooltip: "Conditional Value at Risk (Expected Shortfall) — 95% confidence, 1-day horizon. Average one-day loss on the worst 5% of days",
+    },
   ];
 
   container.innerHTML = rows.map(row => `

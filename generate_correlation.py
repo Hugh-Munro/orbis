@@ -1,13 +1,18 @@
 """
 generate_correlation.py
 Run from the project root: python generate_correlation.py
-Writes data/correlation.json with real data from Yahoo Finance.
+Writes data/correlation.json with up-to-date data from Yahoo Finance,
+and appends confirmed daily closes to data/price_history.csv (never overwritten).
+
+Designed to be run daily (e.g. via GitHub Actions) with no manual intervention.
 """
 import json
 import numpy as np
 import pandas as pd
 from pathlib import Path
 from datetime import datetime
+import urllib.request
+import io
 
 try:
     from curl_cffi import requests as curl_requests
@@ -18,33 +23,97 @@ except ImportError:
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
+# Rolling window: START stays fixed (earliest data we care about), END is
+# always "today" so every run extends the window forward instead of
+# regenerating the same fixed historical slice.
 START = "2021-01-01"
-END   = "2026-01-01"
-RF    = 0.026  # risk-free rate (annualised)
+END = datetime.today().strftime("%Y-%m-%d")
 
 ASSETS = {
-    "VWRL.L":  {"name": "Global Equity ETF",  "class": "Equity",    "paradigm": "Risk-On"},
-    "IBC1.MU": {"name": "Corp Bond ETC",       "class": "Bond",      "paradigm": "Risk-Off"},
-    "IGLN.L":  {"name": "Gold ETF",            "class": "Commodity", "paradigm": "Real Assets"},
-    "BTC-USD": {"name": "Bitcoin",             "class": "Crypto",    "paradigm": "Risk-On"},
+    "VWRL.L":  {"name": "Global Equity ETF",      "class": "Equity",    "paradigm": "Risk-On"},
+    "IBC1.MU": {"name": "Corp Bond ETC",           "class": "Bond",      "paradigm": "Risk-Off"},
+    "IGLN.L":  {"name": "Gold ETF",                "class": "Commodity", "paradigm": "Real Assets"},
+    "BTC-USD": {"name": "Bitcoin",                 "class": "Crypto",    "paradigm": "Risk-On"},
+    "CSPX.L":  {"name": "US Large-Cap Equity ETF", "class": "Equity",    "paradigm": "Risk-On"},
+    "EIMI.L":  {"name": "EM Equity ETF",           "class": "Equity",    "paradigm": "Risk-On"},
+    "AGGH.MI": {"name": "Global Agg Bond ETF",     "class": "Bond",      "paradigm": "Risk-Off"},
+    "IWDP.L":  {"name": "Global REIT ETF",         "class": "Real Estate", "paradigm": "Risk-On"},
 }
 
 TICKERS = list(ASSETS.keys())
 
-# ── Fetch ─────────────────────────────────────────────────────────────────────
+HISTORY_PATH = Path("data/price_history.csv")
+OUTPUT_PATH = Path("data/correlation.json")
+
+TRADING_DAYS = 252
+
+# ── Risk-free rate from FRED ─────────────────────────────────────────────────
+
+def fetch_fred_risk_free_rate(series_id="DTB3", fallback=0.026):
+    """
+    Pulls the latest 3-Month Treasury Bill secondary market rate from FRED.
+    No API key required — FRED serves plain CSV via fredgraph.csv.
+    Returns (annualised decimal rate, as-of date string).
+    Falls back to `fallback` if the request fails for any reason so the
+    whole pipeline doesn't break over a rate lookup.
+    """
+    url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}"
+    try:
+        with urllib.request.urlopen(url, timeout=15) as resp:
+            raw_csv = resp.read().decode("utf-8")
+        df = pd.read_csv(io.StringIO(raw_csv))
+        df.columns = ["date", "value"]
+        df["value"] = pd.to_numeric(df["value"], errors="coerce")
+        df = df.dropna(subset=["value"])
+        if df.empty:
+            raise ValueError("FRED series returned no usable rows")
+        latest_row = df.iloc[-1]
+        rate_pct = float(latest_row["value"])
+        rate_decimal = rate_pct / 100.0
+        print(f"FRED {series_id}: {rate_pct:.2f}% as of {latest_row['date']} -> using {rate_decimal:.4f}")
+        return rate_decimal, str(latest_row["date"])
+    except Exception as e:
+        print(f"WARNING: FRED fetch failed ({e}); falling back to RF={fallback}")
+        return fallback, None
+
+RF, RF_AS_OF = fetch_fred_risk_free_rate()
+
+# ── Fetch prices ──────────────────────────────────────────────────────────────
 
 print("Fetching prices...")
 raw = yf.download(TICKERS, start=START, end=END, auto_adjust=True)["Close"]
 
-# Drop rows where every column is NaN, then forward-fill gaps up to 3 days
 raw = raw.dropna(how="all").ffill(limit=3)
 
-# Remove rows where any asset has an implausible single-day move (bad ticks)
 pct = raw.pct_change().abs()
 raw = raw[~(pct > 0.5).any(axis=1)]
 
 print(f"Got {len(raw)} rows from {raw.index[0].date()} to {raw.index[-1].date()}")
 print("Missingness:\n", raw.isnull().sum())
+
+# ── Append to permanent price history archive (never overwritten) ───────────
+#
+# Each run, we merge today's fetch into whatever's already on disk, keyed by
+# date. Existing rows are only updated if Yahoo revises a value (rare) —
+# nothing is ever deleted, so the file only grows over time.
+
+HISTORY_PATH.parent.mkdir(exist_ok=True)
+
+new_data = raw.copy()
+new_data.index.name = "date"
+new_data = new_data.reset_index()
+new_data["date"] = new_data["date"].dt.strftime("%Y-%m-%d")
+
+if HISTORY_PATH.exists():
+    existing = pd.read_csv(HISTORY_PATH)
+    combined = pd.concat([existing, new_data], ignore_index=True)
+    combined = combined.drop_duplicates(subset="date", keep="last")
+else:
+    combined = new_data
+
+combined = combined.sort_values("date").reset_index(drop=True)
+combined.to_csv(HISTORY_PATH, index=False)
+print(f"Price history archive: {len(combined)} total rows -> {HISTORY_PATH}")
 
 # ── Returns (shared trading days only) ───────────────────────────────────────
 
@@ -54,8 +123,6 @@ returns = returns[returns.abs() < 0.5]
 print(f"\n{len(returns)} shared return observations")
 
 # ── Per-asset stats ───────────────────────────────────────────────────────────
-
-TRADING_DAYS = 252
 
 def annualised_return(r):
     total = (1 + r).prod()
@@ -134,6 +201,9 @@ output = {
     "edges": edges,
     "window": f"Daily returns {START} to {END}",
     "computed_at": datetime.today().strftime("%Y-%m-%d"),
+    "riskFreeRate": round(RF, 4),
+    "riskFreeRateSource": "FRED DTB3 (3-Month Treasury Bill, secondary market)",
+    "riskFreeRateAsOf": RF_AS_OF,
     "daily_returns": {
         t: {
             "dates": [d.strftime("%Y-%m-%d") for d in returns.index],
@@ -145,9 +215,8 @@ output = {
 
 # ── Write ─────────────────────────────────────────────────────────────────────
 
-out_path = Path("data/correlation.json")
-out_path.parent.mkdir(exist_ok=True)
-with open(out_path, "w") as f:
+OUTPUT_PATH.parent.mkdir(exist_ok=True)
+with open(OUTPUT_PATH, "w") as f:
     json.dump(output, f, indent=2)
 
-print(f"\nWrote {out_path}")
+print(f"\nWrote {OUTPUT_PATH}")
