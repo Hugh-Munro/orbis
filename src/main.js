@@ -65,13 +65,13 @@ async function init() {
       app.weights = weights;
       setPortfolioValueDisplay(app.portfolioValue, false); // always editable now
 
-      const stats = computePortfolioStats(correlationData, weights);
+      const stats = computePortfolioStats(correlationData, weights, app.portfolioValue);
       buildStatsPanel(stats);
 
-      document.querySelectorAll(".stat-item").forEach(tile => {
+      document.querySelectorAll(".stat-item, .dist-stat-row-clickable").forEach(tile => {
         tile.style.cursor = "pointer";
         tile.addEventListener("click", () => {
-          openChartView(correlationData, app.weights, setView);
+          openChartView(correlationData, app.weights, setView, tile.dataset.chartTab || "vol");
         });
       });
 
@@ -87,6 +87,7 @@ async function init() {
     buildPortfolioValuePanel(app, () => {
       if (app.cy) app.cy.style().update();
       if (app.onPortfolioValueChangeForCustom) app.onPortfolioValueChangeForCustom();
+      refreshStats(activeScheme === "custom" ? app.weights : activeScheme);
     });
 
     buildUniversePanel(app, nodes, () => {

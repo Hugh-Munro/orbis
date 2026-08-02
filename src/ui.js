@@ -1,5 +1,5 @@
 import { GROUP_COLORS, GROUP_LABELS } from "./constants.js";
-import { computeCorrelationSignificance } from "./stats.js";
+import { computeCorrelationSignificance, computeRollingCorrelation, computeAssetDaysToLiquidate } from "./stats.js";
 
 export function formatGroupName(group) {
   return GROUP_LABELS[group] || group;
@@ -468,8 +468,17 @@ export function updateEdgeInfoPanel(edge, app) {
   const { n, ciLow, ciHigh, pValue } = computeCorrelationSignificance(
     app.correlationData, edge.source().id(), edge.target().id(), corr
   );
+  const rolling = computeRollingCorrelation(app.correlationData, edge.source().id(), edge.target().id(), 90);
   const fmtP = p => !Number.isFinite(p) ? "—" : p < 0.001 ? "< .001" : ("= " + p.toFixed(3).replace(/^0/, ""));
   const fmtCi = v => Number.isFinite(v) ? (v >= 0 ? "+" : "") + v.toFixed(2) : "—";
+
+  const drift = Number.isFinite(rolling) ? rolling - corr : NaN;
+  const driftRow = Number.isFinite(rolling)
+    ? `<div style="display:flex;justify-content:space-between;padding:2px 0">
+        <span>90D rolling</span>
+        <span style="font-weight:600;color:#1a1a1a">${fmtCi(rolling)}<span style="color:${Math.abs(drift) >= 0.15 ? "#c96a1f" : "#a0a8b0"};font-weight:600;margin-left:6px">${drift >= 0 ? "+" : ""}${drift.toFixed(2)}</span></span>
+      </div>`
+    : "";
 
   document.getElementById("info-content").innerHTML = `
     <strong style="font-size:13px">${source} / ${target}</strong>
@@ -477,6 +486,7 @@ export function updateEdgeInfoPanel(edge, app) {
       <span style="font-size:22px;font-weight:700;color:${corr >= 0 ? "#1a1a1a" : "#a8391f"}">${sign}${corr.toFixed(2)}</span>
     </div>
     <div style="margin-top:10px;border-top:1px solid #e8e8e0;padding-top:8px;font-size:11px;color:#666">
+      ${driftRow}
       <div style="display:flex;justify-content:space-between;padding:2px 0">
         <span>n</span><span style="font-weight:600;color:#1a1a1a">${n || "—"}</span>
       </div>
@@ -595,6 +605,13 @@ export function showCard(app, data, node) {
   if (asset) {
     const fmt = v => Number.isFinite(v) ? (v * 100).toFixed(1) + "%" : "—";
     const fmtRatio = v => Number.isFinite(v) ? v.toFixed(2) : "—";
+    const fmtCompactDollars = v => {
+      if (!Number.isFinite(v) || v <= 0) return "—";
+      if (v >= 1e9) return "$" + (v / 1e9).toFixed(1) + "B";
+      if (v >= 1e6) return "$" + (v / 1e6).toFixed(1) + "M";
+      if (v >= 1e3) return "$" + (v / 1e3).toFixed(0) + "K";
+      return "$" + v.toFixed(0);
+    };
     const pos = "#2d8a5e";
     const neg = "#c0385a";
     const neu = "#888";
@@ -618,6 +635,16 @@ export function showCard(app, data, node) {
         <div class="fc-stat-val" style="color:${(asset.sharpe || 0) >= 1 ? pos : neg}">
           ${fmtRatio(asset.sharpe)}
         </div>
+      </div>
+      <div class="fc-stat" title="Time to unwind this position at 20% of its 20-day average daily dollar volume">
+        <div class="fc-stat-label">Days to liquidate</div>
+        <div class="fc-stat-val" style="color:${neu}">
+          ${fmtRatio(computeAssetDaysToLiquidate(app.correlationData, data.id, dollarAmount))}
+        </div>
+      </div>
+      <div class="fc-stat" title="20-day average daily dollar volume traded">
+        <div class="fc-stat-label">ADTV</div>
+        <div class="fc-stat-val" style="color:${neu}">${fmtCompactDollars(asset.adtv)}</div>
       </div>
     `;
   } else {
@@ -723,6 +750,7 @@ export function buildStatsPanel(stats) {
         value: Number.isFinite(stats.portfolioVol) ? (stats.portfolioVol * 100).toFixed(1) + "%" : "—",
         color: "#1a1a1a",
         tooltip: "Annualised realised volatility of the portfolio.",
+        chartTab: "vol",
       },
       {
         label: "Skew",
@@ -750,7 +778,7 @@ export function buildStatsPanel(stats) {
       },
     ];
     return rows.map(r => `
-      <div class="dist-stat-row" title="${r.tooltip}">
+      <div class="dist-stat-row${r.chartTab ? " dist-stat-row-clickable" : ""}" title="${r.tooltip}" data-chart-tab="${r.chartTab || ""}">
         <span class="dist-stat-label">${r.label}</span>
         <span class="dist-stat-value" style="color:${r.color}">${r.value}</span>
       </div>
@@ -767,18 +795,21 @@ export function buildStatsPanel(stats) {
           value: fmtPercent(stats.portfolioReturn),
           color: color(stats.portfolioReturn),
           tooltip: "Compound Annual Growth Rate: geometric annualised return for the current weighting.",
+          chartTab: "returns",
         },
         {
           label: "Sharpe ratio",
           value: fmtRatio(stats.sharpe),
           color: color(Number.isFinite(stats.sharpe) ? stats.sharpe - 1 : NaN),
           tooltip: "Sharpe = (CAGR − Rf) / Realised Vol. Rf = 2.6%.",
+          chartTab: "sharpe",
         },
         {
           label: "Sortino ratio",
           value: fmtRatio(stats.sortino),
           color: color(Number.isFinite(stats.sortino) ? stats.sortino - 1 : NaN),
           tooltip: "Sortino = (CAGR − Rf) / Downside Vol. Rf = 2.6%.",
+          chartTab: "sharpe",
         },
         {
           label: "PSR",
@@ -787,6 +818,13 @@ export function buildStatsPanel(stats) {
             ? (stats.psr >= 0.95 ? "#2d8a5e" : "#c0385a")
             : "#a0a8b0",
           tooltip: "Probabilistic Sharpe Ratio (Bailey and Lopez de Prado). Confidence that true daily Sharpe exceeds 0, adjusted for skew, kurtosis and sample size (n=" + stats.psrObs + ").",
+        },
+        {
+          label: "Information ratio",
+          value: fmtRatio(stats.informationRatio),
+          color: color(stats.informationRatio),
+          tooltip: "Excess annualised return over the S&P 500 (US Large-Cap Equity ETF) per unit of tracking error.",
+          wide: true,
         },
       ],
     },
@@ -799,6 +837,7 @@ export function buildStatsPanel(stats) {
           value: Number.isFinite(stats.maxDrawdown) ? (stats.maxDrawdown * 100).toFixed(1) + "%" : "—",
           color: "#c0385a",
           tooltip: "Weighted average of individual asset maximum drawdowns.",
+          chartTab: "drawdown",
         },
         {
           label: "VaR",
@@ -819,6 +858,20 @@ export function buildStatsPanel(stats) {
             ? (stats.avgCorrelation > 0.5 ? "#c0385a" : "#2d8a5e")
             : "#a0a8b0",
           tooltip: "Mean pairwise correlation across all asset pairs in the portfolio.",
+          chartTab: "corr",
+        },
+        {
+          label: "Effective N",
+          value: Number.isFinite(stats.effectiveN) ? stats.effectiveN.toFixed(2) : "—",
+          color: "#1a1a1a",
+          tooltip: "Effective number of independent bets (Meucci), from the entropy of the correlation matrix's eigenvalue spectrum. Lower than the asset count means the book is driven by fewer independent factors than it looks like on paper.",
+          chartTab: "corr",
+        },
+        {
+          label: "Days to liquidate",
+          value: Number.isFinite(stats.daysToLiquidate) ? stats.daysToLiquidate.toFixed(1) : "—",
+          color: "#1a1a1a",
+          tooltip: "Time to fully unwind the portfolio at 20% of each position's 20-day average daily dollar volume. Gated by the slowest position, not an average.",
         },
       ],
     },
@@ -837,7 +890,7 @@ export function buildStatsPanel(stats) {
       <div class="stats-group-label">${group.name}</div>
       <div class="stats-grid stats-grid-${group.cols}">
         ${group.rows.map(row => `
-          <div class="stat-item" title="${row.tooltip}">
+          <div class="stat-item${row.wide ? " stat-item-wide" : ""}" title="${row.tooltip}" data-chart-tab="${row.chartTab || ""}">
             <div class="stat-label">${row.label}</div>
             <div class="stat-value" style="color:${row.color}">${row.value}</div>
           </div>

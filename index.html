@@ -133,6 +133,13 @@
       </label>
       <span class="chart-switch-label">Highlight 2σ vol spikes</span>
     </div>
+    <div id="corr-window-wrap" class="chart-control-row">
+      <span class="chart-switch-label">Correlation window</span>
+      <div class="corr-window-toggle">
+        <button type="button" class="corr-window-btn active" data-window="full">Full sample</button>
+        <button type="button" class="corr-window-btn" data-window="90d">90D rolling</button>
+      </div>
+    </div>
     <div id="chart-area">
       <svg id="chart-svg"></svg>
       <div id="chart-tooltip"></div>

@@ -716,6 +716,15 @@ input {
   font-size: 11.5px;
 }
 
+.dist-stat-row-clickable {
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.dist-stat-row-clickable:hover {
+  background: var(--bg);
+}
+
 .dist-stat-row:last-child {
   border-bottom: none;
 }
@@ -736,6 +745,10 @@ input {
   border-radius: 6px;
   padding: 7px 9px;
   cursor: default;
+}
+
+.stat-item-wide {
+  grid-column: 1 / -1;
 }
 
 .stat-item:hover {
@@ -917,7 +930,7 @@ input {
   align-items: baseline;
   gap: 6px;
   padding: 8px 10px;
-  background: #f8f7f2;
+  background: var(--bg);
   border-radius: 6px;
   border: 0.5px solid var(--line);
   margin-bottom: 10px;
@@ -945,7 +958,7 @@ input {
 }
 
 .fc-stat {
-  background: #f8f7f2;
+  background: var(--bg);
   border: 0.5px solid var(--line);
   border-radius: 6px;
   padding: 6px 8px;
@@ -1185,6 +1198,40 @@ input {
   font-weight: 600;
   color: #c0385a;
   min-width: 34px;
+}
+
+.corr-window-toggle {
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.corr-window-btn {
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--line);
+  color: #4a5568;
+  cursor: pointer;
+  font-size: 11px;
+  font-family: var(--font-main);
+  padding: 5px 12px;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+
+.corr-window-btn:last-child {
+  border-right: none;
+}
+
+.corr-window-btn:hover {
+  background: var(--bg);
+}
+
+.corr-window-btn.active {
+  background: var(--ink);
+  color: #fff;
+  font-weight: 600;
 }
 
 #chart-area {

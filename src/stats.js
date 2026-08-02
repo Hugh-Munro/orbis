@@ -11,6 +11,33 @@ export function computeEqualWeights(correlationData, selectedTickers) {
   return Object.fromEntries(tickers.map(t => [t, w]));
 }
 
+// Assumed max fraction of a day's ADTV that can be traded without material
+// market impact — 20% is standard institutional practice (conservative desks
+// use 10%, aggressive ones up to 25-30%).
+const LIQUIDITY_PARTICIPATION_RATE = 0.20;
+
+// Days to fully unwind a single position at the assumed participation rate.
+// Returns NaN if the asset has no ADTV data yet (older correlation.json
+// generated before the volume field was added to the pipeline).
+export function computeAssetDaysToLiquidate(correlationData, ticker, positionValue) {
+  const adtv = correlationData.assets[ticker] && correlationData.assets[ticker].adtv;
+  if (!adtv || !Number.isFinite(adtv) || adtv <= 0) return NaN;
+  return positionValue / (LIQUIDITY_PARTICIPATION_RATE * adtv);
+}
+
+// Portfolio-level days to liquidate is the max across positions, not an
+// average — you're gated by your slowest position when fully unwinding, and
+// a weighted average would let one illiquid holding hide behind a book full
+// of liquid ones.
+function computePortfolioDaysToLiquidate(correlationData, weights, tickers, portfolioValue) {
+  let maxDays = null;
+  tickers.forEach(t => {
+    const days = computeAssetDaysToLiquidate(correlationData, t, portfolioValue * (weights[t] || 0));
+    if (Number.isFinite(days) && (maxDays === null || days > maxDays)) maxDays = days;
+  });
+  return maxDays === null ? NaN : maxDays;
+}
+
 // Fisher z-transform significance test for a single pairwise correlation:
 // 95% CI on rho, and a two-tailed p-value against H0: rho = 0. n is the
 // actual overlapping valid-observation count for that specific pair, not
@@ -38,6 +65,106 @@ export function computeCorrelationSignificance(correlationData, sourceId, target
   const pValue = 2 * (1 - normalCdf(Math.abs(z / se)));
 
   return { n, ciLow, ciHigh, pValue };
+}
+
+// 90-day rolling Pearson correlation for a single pair, using the most
+// recent `window` overlapping valid daily observations. Lets a caller
+// compare "how correlated has this pair actually been lately" against the
+// full-sample number shown elsewhere, to catch regime drift.
+export function computeRollingCorrelation(correlationData, sourceId, targetId, window = 90) {
+  const dr = correlationData.daily_returns;
+  if (!dr || !dr[sourceId] || !dr[targetId]) return null;
+  const a = dr[sourceId].values;
+  const b = dr[targetId].values;
+  const len = Math.min(a.length, b.length);
+  const pairs = [];
+  for (let i = 0; i < len; i++) {
+    if (Number.isFinite(a[i]) && Number.isFinite(b[i])) pairs.push([a[i], b[i]]);
+  }
+  const recent = pairs.slice(-window);
+  if (recent.length < 20) return null;
+
+  const meanA = recent.reduce((s, [x]) => s + x, 0) / recent.length;
+  const meanB = recent.reduce((s, [, y]) => s + y, 0) / recent.length;
+  let cov = 0, varA = 0, varB = 0;
+  recent.forEach(([x, y]) => {
+    cov += (x - meanA) * (y - meanB);
+    varA += (x - meanA) ** 2;
+    varB += (y - meanB) ** 2;
+  });
+  const denom = Math.sqrt(varA * varB);
+  return denom ? cov / denom : null;
+}
+
+// Jacobi eigenvalue algorithm for a small symmetric matrix. Repeatedly
+// zeroes the largest off-diagonal element via a Givens rotation until the
+// matrix is (numerically) diagonal. Fine for the portfolio sizes this app
+// deals with (tens of assets, not thousands) — no need for a full linear
+// algebra library.
+function jacobiEigen(matrix, maxIter = 100, tol = 1e-10) {
+  const n = matrix.length;
+  const A = matrix.map(row => row.slice());
+  const V = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => (i === j ? 1 : 0)));
+
+  for (let iter = 0; iter < maxIter; iter++) {
+    let off = 0, p = 0, q = 1;
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        if (Math.abs(A[i][j]) > off) { off = Math.abs(A[i][j]); p = i; q = j; }
+      }
+    }
+    if (off < tol) break;
+
+    const app = A[p][p], aqq = A[q][q], apq = A[p][q];
+    const phi = 0.5 * Math.atan2(2 * apq, aqq - app);
+    const c = Math.cos(phi), s = Math.sin(phi);
+
+    for (let k = 0; k < n; k++) {
+      const akp = A[k][p], akq = A[k][q];
+      A[k][p] = c * akp - s * akq;
+      A[k][q] = s * akp + c * akq;
+    }
+    for (let k = 0; k < n; k++) {
+      const apk = A[p][k], aqk = A[q][k];
+      A[p][k] = c * apk - s * aqk;
+      A[q][k] = s * apk + c * aqk;
+    }
+    for (let k = 0; k < n; k++) {
+      const vkp = V[k][p], vkq = V[k][q];
+      V[k][p] = c * vkp - s * vkq;
+      V[k][q] = s * vkp + c * vkq;
+    }
+  }
+
+  return { eigenvalues: A.map((row, i) => row[i]), eigenvectors: V };
+}
+
+// Effective number of bets (Meucci) — decomposes portfolio variance into
+// uncorrelated principal-component factors, then takes the Shannon-entropy
+// exponential of each factor's variance share. Unlike Mean Corr, this
+// actually accounts for the full correlation structure: a portfolio can
+// have low average correlation yet still be dominated by one latent factor,
+// and this catches that where a simple pairwise average can't.
+function computeEffectiveN(corrMatrix, vols, weights, tickers) {
+  const n = tickers.length;
+  if (n < 2) return n;
+
+  const cov = tickers.map(t => tickers.map(u => corrMatrix[t][u] * vols[t] * vols[u]));
+  const { eigenvalues, eigenvectors } = jacobiEigen(cov);
+  const w = tickers.map(t => weights[t] || 0);
+
+  const contrib = eigenvalues.map((lambda, j) => {
+    let proj = 0;
+    for (let i = 0; i < n; i++) proj += eigenvectors[i][j] * w[i];
+    return Math.max(0, proj * proj * lambda);
+  });
+
+  const totalVar = contrib.reduce((s, v) => s + v, 0);
+  if (!totalVar) return NaN;
+
+  const probs = contrib.map(c => c / totalVar).filter(p => p > 1e-12);
+  const entropy = -probs.reduce((s, p) => s + p * Math.log(p), 0);
+  return Math.exp(entropy);
 }
 
 export function computeInverseVolWeights(correlationData, selectedTickers) {
@@ -169,7 +296,43 @@ function computeDistributionStats(series, dailyRf) {
   return { skew, kurtosis: excessKurtosis, psr };
 }
 
-export function computePortfolioStats(correlationData, weights) {
+// Information Ratio vs the S&P 500 (CSPX.L, the US large-cap ETF already in
+// the universe) — excess annualised return per unit of annualised tracking
+// error. The benchmark is used purely as a return/vol reference here,
+// independent of whether it's actually held in the current weighting.
+const BENCHMARK_TICKER = "CSPX.L";
+
+function computeInformationRatio(correlationData, weights, tickers, portfolioReturn) {
+  const dr = correlationData.daily_returns;
+  const benchAsset = correlationData.assets[BENCHMARK_TICKER];
+  if (!dr || !dr[BENCHMARK_TICKER] || !benchAsset) return NaN;
+
+  const benchValues = dr[BENCHMARK_TICKER].values;
+  const n = benchValues.length;
+  const excess = [];
+  for (let i = 0; i < n; i++) {
+    let dayReturn = 0;
+    let valid = true;
+    for (const t of tickers) {
+      const v = dr[t] && dr[t].values[i];
+      if (v === null || v === undefined || Number.isNaN(v)) { valid = false; break; }
+      dayReturn += weights[t] * v;
+    }
+    const bv = benchValues[i];
+    if (!valid || bv === null || bv === undefined || Number.isNaN(bv)) continue;
+    excess.push(dayReturn - bv);
+  }
+  if (excess.length < 20) return NaN;
+
+  const mean = excess.reduce((s, v) => s + v, 0) / excess.length;
+  const variance = excess.reduce((s, v) => s + (v - mean) ** 2, 0) / (excess.length - 1);
+  const trackingError = Math.sqrt(variance) * Math.sqrt(252);
+  if (!trackingError) return NaN;
+
+  return (portfolioReturn - benchAsset.return) / trackingError;
+}
+
+export function computePortfolioStats(correlationData, weights, portfolioValue = 0) {
   // Risk-free rate now comes from the data pipeline (FRED DTB3), not a hardcoded
   // constant. Falls back to the old static value only if the field is missing
   // (e.g. an older correlation.json generated before this change).
@@ -213,6 +376,8 @@ export function computePortfolioStats(correlationData, weights) {
   const downsideVol = portfolioVol * Math.sqrt(0.5);
   const sortino = (portfolioReturn - RISK_FREE_RATE) / downsideVol;
 
+  const informationRatio = computeInformationRatio(correlationData, w, tickers, portfolioReturn);
+
   const pairs = [];
   tickers.forEach((t, i) => {
     tickers.slice(i + 1).forEach(u => {
@@ -224,6 +389,8 @@ export function computePortfolioStats(correlationData, weights) {
     : 0;
 
   const maxDrawdown = tickers.reduce((sum, t) => sum + w[t] * correlationData.assets[t].maxDrawdown, 0);
+  const effectiveN = computeEffectiveN(corrMatrix, vols, w, tickers);
+  const daysToLiquidate = computePortfolioDaysToLiquidate(correlationData, w, tickers, portfolioValue);
 
   const dailySeries = getPortfolioDailySeries(correlationData, w, tickers);
   const { var95, cvar95 } = computeHistoricalVarCvar(dailySeries);
@@ -235,8 +402,11 @@ export function computePortfolioStats(correlationData, weights) {
     portfolioVol,
     sharpe,
     sortino,
+    informationRatio,
     avgCorrelation,
     maxDrawdown,
+    effectiveN,
+    daysToLiquidate,
     var95,
     cvar95,
     skew,

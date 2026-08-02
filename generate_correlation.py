@@ -81,7 +81,9 @@ RF, RF_AS_OF = fetch_fred_risk_free_rate()
 # ── Fetch prices ──────────────────────────────────────────────────────────────
 
 print("Fetching prices...")
-raw = yf.download(TICKERS, start=START, end=END, auto_adjust=True)["Close"]
+raw_data = yf.download(TICKERS, start=START, end=END, auto_adjust=True)
+raw = raw_data["Close"]
+volume = raw_data["Volume"]
 
 raw = raw.dropna(how="all").ffill(limit=3)
 
@@ -150,6 +152,17 @@ def sortino(r):
         return None
     return (ann_ret - RF) / downside
 
+def dollar_adtv(vol_series, price_series, window=20):
+    """20-day average daily dollar volume — reacts to recent liquidity
+    conditions rather than smoothing over a stale, long-run average."""
+    v = vol_series.dropna().tail(window)
+    p = price_series.dropna().tail(window)
+    common = v.index.intersection(p.index)
+    if len(common) == 0:
+        return None
+    dollar_vol = float((v.loc[common] * p.loc[common]).mean())
+    return dollar_vol if pd.notna(dollar_vol) else None
+
 latest_prices = {t: float(raw[t].dropna().iloc[-1]) for t in TICKERS}
 
 asset_stats = {}
@@ -158,6 +171,7 @@ for t in TICKERS:
     p = raw[t].dropna()
     ret = annualised_return(r)
     vol = annualised_vol(r)
+    adtv = dollar_adtv(volume[t], raw[t])
     asset_stats[t] = {
         "return": round(ret, 4),
         "vol":    round(vol, 4),
@@ -165,8 +179,10 @@ for t in TICKERS:
         "sharpe":  round(sharpe(ret, vol), 4) if sharpe(ret, vol) is not None else None,
         "sortino": round(sortino(r), 4) if sortino(r) is not None else None,
         "price":   round(latest_prices[t], 4),
+        "adtv":    round(adtv, 2) if adtv is not None else None,
     }
-    print(f"{t:12s}  ret={ret:+.1%}  vol={vol:.1%}  mdd={max_drawdown(p):.1%}  price={latest_prices[t]:.2f}")
+    adtv_str = f"${adtv:,.0f}" if adtv is not None else "n/a"
+    print(f"{t:12s}  ret={ret:+.1%}  vol={vol:.1%}  mdd={max_drawdown(p):.1%}  price={latest_prices[t]:.2f}  adtv={adtv_str}")
 
 # ── Correlation matrix ────────────────────────────────────────────────────────
 

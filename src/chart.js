@@ -1,4 +1,5 @@
 import { GROUP_COLORS } from "./constants.js";
+import { computeRollingCorrelation } from "./stats.js";
 
 const WINDOW = 30;
 const TRADING_DAYS = 252;
@@ -597,20 +598,28 @@ function drawRollingSharpe(correlationData, weights, activeSeries) {
 
 // ── Correlation matrix ────────────────────────────────────────────────────────
 
-function drawCorrelationMatrix(correlationData) {
+function drawCorrelationMatrix(correlationData, windowMode = "full") {
   const area = document.getElementById("chart-area");
   const tickers = Object.keys(correlationData.assets);
   const tickerLabels = tickers.map(t => t.split(".")[0].split("-")[0]);
 
-  const corr = {};
+  const fullCorr = {};
   tickers.forEach(t => {
-    corr[t] = {};
-    tickers.forEach(u => { corr[t][u] = t === u ? null : 0; });
+    fullCorr[t] = {};
+    tickers.forEach(u => { fullCorr[t][u] = t === u ? null : 0; });
   });
   correlationData.edges.forEach(({ source, target, correlation }) => {
-    if (corr[source]) corr[source][target] = correlation;
-    if (corr[target]) corr[target][source] = correlation;
+    if (fullCorr[source]) fullCorr[source][target] = correlation;
+    if (fullCorr[target]) fullCorr[target][source] = correlation;
   });
+
+  // 90D mode swaps every cell for the rolling value — a real recompute per
+  // pair, not just an annotation on top of the full-sample number.
+  const corr = windowMode === "90d"
+    ? Object.fromEntries(tickers.map(t => [t, Object.fromEntries(tickers.map(u =>
+        [u, t === u ? null : computeRollingCorrelation(correlationData, t, u, 90)]
+      ))]))
+    : fullCorr;
 
   function cellColor(val) {
     if (val >= 0.5)  return { bg: "#f2dbd8", text: "#7a2318" };
@@ -630,7 +639,7 @@ function drawCorrelationMatrix(correlationData) {
     html += `<div style="display:flex;align-items:center;justify-content:flex-end;padding-right:8px;font-size:10px;color:#a0a8b0;font-family:Inter,sans-serif;">${tickerLabels[i]}</div>`;
     tickers.forEach(colT => {
       const val = corr[rowT][colT];
-      if (val === null) {
+      if (val === null || !Number.isFinite(val)) {
         html += `<div style="display:flex;align-items:center;justify-content:center;border-radius:6px;background:#f0ede6;font-size:12px;font-weight:600;color:#c8c0b4;font-family:Inter,sans-serif;">—</div>`;
       } else {
         const { bg, text } = cellColor(val);
@@ -683,7 +692,7 @@ function buildToggles(assetSeries, getCurrentChart, redraw) {
 
 // ── Main export ───────────────────────────────────────────────────────────────
 
-export function openChartView(correlationData, weights, setView) {
+export function openChartView(correlationData, weights, setView, initialTab = "vol") {
   setView("chart");
 
   document.fonts.ready.then(() => {
@@ -699,7 +708,7 @@ export function openChartView(correlationData, weights, setView) {
       };
     });
 
-    let currentChart = "vol";
+    let currentChart = initialTab;
 
     const ddToggle = document.getElementById("dd-threshold-toggle");
     const ddSlider = document.getElementById("dd-threshold-slider");
@@ -708,6 +717,9 @@ export function openChartView(correlationData, weights, setView) {
     const ddControls = document.getElementById("dd-threshold-controls");
     const sigmaToggle = document.getElementById("vol-sigma-toggle");
     const sigmaWrap = document.getElementById("vol-sigma-wrap");
+    const corrWindowWrap = document.getElementById("corr-window-wrap");
+    const corrWindowBtns = document.querySelectorAll(".corr-window-btn");
+    let corrWindow = "full";
 
     function getActiveSeries() {
       const s = {};
@@ -723,11 +735,20 @@ export function openChartView(correlationData, weights, setView) {
       if (currentChart === "vol") drawChart(port, getActiveSeries(), correlationData, sigmaToggle.checked);
       else if (currentChart === "returns") drawCumulativeReturns(correlationData, weights, getActiveSeries());
       else if (currentChart === "drawdown") drawDrawdown(correlationData, weights, getActiveSeries(), getDrawdownThreshold());
-      else if (currentChart === "corr") drawCorrelationMatrix(correlationData);
+      else if (currentChart === "corr") drawCorrelationMatrix(correlationData, corrWindow);
       else if (currentChart === "sharpe") drawRollingSharpe(correlationData, weights, getActiveSeries());
     }
 
     sigmaToggle.addEventListener("change", redraw);
+
+    corrWindowBtns.forEach(btn => {
+      btn.addEventListener("click", () => {
+        corrWindowBtns.forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        corrWindow = btn.dataset.window;
+        redraw();
+      });
+    });
 
     ddToggle.addEventListener("change", () => {
       ddControls.classList.toggle("visible", ddToggle.checked);
@@ -767,21 +788,27 @@ export function openChartView(correlationData, weights, setView) {
         togglesWrap.style.display = currentChart === "corr" ? "none" : "flex";
         ddWrap.classList.toggle("visible", currentChart === "drawdown");
         sigmaWrap.classList.toggle("visible", currentChart === "vol");
+        corrWindowWrap.classList.toggle("visible", currentChart === "corr");
         redraw();
       });
     });
 
-    // Init
+    // Init — opens on whichever tab the caller asked for (e.g. clicking the
+    // "Max drawdown" stat jumps straight to the Drawdown tab), defaulting
+    // to Realised Vol when there's no specific match.
     tabs.forEach(t => t.classList.remove("active"));
-    const volTab = document.querySelector('.chart-tab[data-chart="vol"]');
-    if (volTab) {
-      volTab.classList.add("active");
-      requestAnimationFrame(() => moveIndicator(volTab));
+    const initTab = document.querySelector(`.chart-tab[data-chart="${currentChart}"]`)
+      || document.querySelector('.chart-tab[data-chart="vol"]');
+    if (initTab) {
+      initTab.classList.add("active");
+      currentChart = initTab.dataset.chart;
+      requestAnimationFrame(() => moveIndicator(initTab));
     }
-    togglesWrap.style.display = "flex";
-    ddWrap.classList.remove("visible");
-    sigmaWrap.classList.add("visible");
-    document.getElementById("chart-title").textContent = titles.vol;
-    drawChart(port, {}, correlationData, sigmaToggle.checked);
+    togglesWrap.style.display = currentChart === "corr" ? "none" : "flex";
+    ddWrap.classList.toggle("visible", currentChart === "drawdown");
+    sigmaWrap.classList.toggle("visible", currentChart === "vol");
+    corrWindowWrap.classList.toggle("visible", currentChart === "corr");
+    document.getElementById("chart-title").textContent = titles[currentChart];
+    redraw();
   });
 }
