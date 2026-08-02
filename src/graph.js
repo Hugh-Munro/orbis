@@ -308,7 +308,7 @@ export function setupGraphEvents(app) {
     clearSelectionClasses(app);
     hideCard(app);
     edge.addClass("selected-edge");
-    updateEdgeInfoPanel(edge);
+    updateEdgeInfoPanel(edge, app);
   });
 
   app.cy.on("pan zoom resize", () => {

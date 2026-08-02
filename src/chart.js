@@ -152,7 +152,7 @@ function buildSVGScaffold(W, H, PAD, innerW, innerH, yTickVals, yScale, xScale, 
   filteredXTicks.forEach(({ i, label }) => {
     const x = xScale(i);
     markup += `<text x="${x}" y="${PAD.top + innerH + 20}" text-anchor="middle"
-      font-family="Inter, sans-serif" font-size="10" fill="#a0a8b0">${label}</text>`;
+      font-family="Inter, sans-serif" font-size="10" fill="#5a6472">${label}</text>`;
     markup += `<line x1="${x}" y1="${PAD.top}" x2="${x}" y2="${PAD.top + innerH}"
       stroke="#e8e8e0" stroke-width="1"/>`;
   });
@@ -178,7 +178,7 @@ function buildXTicks(dates) {
 
 // ── Volatility chart ──────────────────────────────────────────────────────────
 
-function drawChart(port, assetSeries, correlationData) {
+function drawChart(port, assetSeries, correlationData, showSigma) {
   lockedSeries = null;
   const area = document.getElementById("chart-area");
   const W = area.clientWidth || 800;
@@ -217,6 +217,27 @@ function drawChart(port, assetSeries, correlationData) {
     stroke="#0f1b2d" stroke-width="1" stroke-dasharray="6,4" opacity="0.25"/>`;
   markup += `<text x="${PAD.left + innerW + 6}" y="${avgY + 4}"
     font-family="Inter, sans-serif" font-size="9" fill="#0f1b2d" opacity="0.4">avg</text>`;
+
+  // 2σ vol-spike bands — full chart height, spans every contiguous stretch
+  // where realised vol is more than 2 standard deviations above its own mean.
+  if (showSigma && portValid.length > 1) {
+    const volMean = avgVol;
+    const volStd = Math.sqrt(portValid.reduce((s, v) => s + (v - volMean) ** 2, 0) / (portValid.length - 1));
+    const sigmaThreshold = volMean + 2 * volStd;
+    const regions = computeBreachRegions(port.values, sigmaThreshold, true);
+    regions.forEach(([s, e]) => {
+      const x1 = xScale(s);
+      const x2 = Math.max(xScale(e), x1 + 1.5);
+      markup += `<rect x="${x1.toFixed(1)}" y="${PAD.top}" width="${(x2 - x1).toFixed(1)}" height="${innerH}"
+        fill="#c96a1f" opacity="0.18"/>`;
+    });
+
+    const sigmaY = yScale(sigmaThreshold);
+    markup += `<line x1="${PAD.left}" y1="${sigmaY.toFixed(1)}" x2="${PAD.left + innerW}" y2="${sigmaY.toFixed(1)}"
+      stroke="#c96a1f" stroke-width="1.5" stroke-dasharray="5,4"/>`;
+    markup += `<text x="${PAD.left + innerW - 4}" y="${sigmaY - 6}" text-anchor="end"
+      font-family="Inter, sans-serif" font-size="10" font-weight="600" fill="#c96a1f">2σ (${(sigmaThreshold * 100).toFixed(1)}%)</text>`;
+  }
 
   // Series
   allSeries.forEach(series => {
@@ -334,7 +355,19 @@ function drawCumulativeReturns(correlationData, weights, activeSeries) {
   });
 }
 
-function drawDrawdown(correlationData, weights, activeSeries) {
+function computeBreachRegions(values, threshold, above = false) {
+  const regions = [];
+  let start = null;
+  values.forEach((v, i) => {
+    const breached = v !== null && (above ? v >= threshold : v <= threshold);
+    if (breached && start === null) start = i;
+    if (!breached && start !== null) { regions.push([start, i - 1]); start = null; }
+  });
+  if (start !== null) regions.push([start, values.length - 1]);
+  return regions;
+}
+
+function drawDrawdown(correlationData, weights, activeSeries, threshold) {
   lockedSeries = null;
   const area = document.getElementById("chart-area");
   const W = area.clientWidth || 800;
@@ -401,6 +434,24 @@ function drawDrawdown(correlationData, weights, activeSeries) {
 
   let markup = buildSVGScaffold(W, H, PAD, innerW, innerH, yTickVals, yScale, xScale,
     buildXTicks(dates), formatYLabel);
+
+  // Threshold breach bands — full chart height, spans every contiguous
+  // stretch where the portfolio drawdown is at or beyond the threshold.
+  if (Number.isFinite(threshold)) {
+    const regions = computeBreachRegions(portDrawdown, threshold);
+    regions.forEach(([s, e]) => {
+      const x1 = xScale(s);
+      const x2 = Math.max(xScale(e), x1 + 1.5);
+      markup += `<rect x="${x1.toFixed(1)}" y="${PAD.top}" width="${(x2 - x1).toFixed(1)}" height="${innerH}"
+        fill="#e0435a" opacity="0.16"/>`;
+    });
+
+    const threshY = yScale(threshold);
+    markup += `<line x1="${PAD.left}" y1="${threshY.toFixed(1)}" x2="${PAD.left + innerW}" y2="${threshY.toFixed(1)}"
+      stroke="#c0385a" stroke-width="1.5" stroke-dasharray="5,4"/>`;
+    markup += `<text x="${PAD.left + innerW - 4}" y="${threshY - 6}" text-anchor="end"
+      font-family="Inter, sans-serif" font-size="10" font-weight="600" fill="#c0385a">${(threshold * 100).toFixed(0)}% threshold</text>`;
+  }
 
   // Shaded area under portfolio drawdown
   const portPoints = portDrawdown.map((v, i) => `${xScale(i).toFixed(1)},${yScale(v).toFixed(1)}`).join(" ");
@@ -650,19 +701,42 @@ export function openChartView(correlationData, weights, setView) {
 
     let currentChart = "vol";
 
+    const ddToggle = document.getElementById("dd-threshold-toggle");
+    const ddSlider = document.getElementById("dd-threshold-slider");
+    const ddValue = document.getElementById("dd-threshold-value");
+    const ddWrap = document.getElementById("drawdown-threshold-wrap");
+    const ddControls = document.getElementById("dd-threshold-controls");
+    const sigmaToggle = document.getElementById("vol-sigma-toggle");
+    const sigmaWrap = document.getElementById("vol-sigma-wrap");
+
     function getActiveSeries() {
       const s = {};
       activeAssets.forEach(t => { s[t] = assetSeries[t]; });
       return s;
     }
 
+    function getDrawdownThreshold() {
+      return ddToggle.checked ? -Number(ddSlider.value) / 100 : null;
+    }
+
     function redraw() {
-      if (currentChart === "vol") drawChart(port, getActiveSeries(), correlationData);
+      if (currentChart === "vol") drawChart(port, getActiveSeries(), correlationData, sigmaToggle.checked);
       else if (currentChart === "returns") drawCumulativeReturns(correlationData, weights, getActiveSeries());
-      else if (currentChart === "drawdown") drawDrawdown(correlationData, weights, getActiveSeries());
+      else if (currentChart === "drawdown") drawDrawdown(correlationData, weights, getActiveSeries(), getDrawdownThreshold());
       else if (currentChart === "corr") drawCorrelationMatrix(correlationData);
       else if (currentChart === "sharpe") drawRollingSharpe(correlationData, weights, getActiveSeries());
     }
+
+    sigmaToggle.addEventListener("change", redraw);
+
+    ddToggle.addEventListener("change", () => {
+      ddControls.classList.toggle("visible", ddToggle.checked);
+      redraw();
+    });
+    ddSlider.addEventListener("input", () => {
+      ddValue.textContent = `-${ddSlider.value}%`;
+      if (ddToggle.checked) redraw();
+    });
 
     buildToggles(assetSeries, () => currentChart, redraw);
 
@@ -691,6 +765,8 @@ export function openChartView(correlationData, weights, setView) {
         currentChart = tab.dataset.chart;
         document.getElementById("chart-title").textContent = titles[currentChart];
         togglesWrap.style.display = currentChart === "corr" ? "none" : "flex";
+        ddWrap.classList.toggle("visible", currentChart === "drawdown");
+        sigmaWrap.classList.toggle("visible", currentChart === "vol");
         redraw();
       });
     });
@@ -703,7 +779,9 @@ export function openChartView(correlationData, weights, setView) {
       requestAnimationFrame(() => moveIndicator(volTab));
     }
     togglesWrap.style.display = "flex";
+    ddWrap.classList.remove("visible");
+    sigmaWrap.classList.add("visible");
     document.getElementById("chart-title").textContent = titles.vol;
-    drawChart(port, {}, correlationData);
+    drawChart(port, {}, correlationData, sigmaToggle.checked);
   });
 }

@@ -1,4 +1,5 @@
-import { GROUP_COLORS, GROUP_LABELS, PARADIGM_COLORS } from "./constants.js";
+import { GROUP_COLORS, GROUP_LABELS } from "./constants.js";
+import { computeCorrelationSignificance } from "./stats.js";
 
 export function formatGroupName(group) {
   return GROUP_LABELS[group] || group;
@@ -7,45 +8,6 @@ export function formatGroupName(group) {
 function formatDollars(amount) {
   if (amount == null || Number.isNaN(amount)) return "—";
   return "$" + Math.round(amount).toLocaleString("en-US");
-}
-
-export function buildSidebar(app, nodes) {
-  const container = document.getElementById("filters");
-  container.querySelectorAll(".pf-btn:not([data-filter='none'])").forEach(b => b.remove());
-  const paradigms = [...new Set(nodes.map(n => n.paradigm))].sort();
-  paradigms.forEach(paradigm => {
-    const c = PARADIGM_COLORS[paradigm] || { bg: "#f0f0f0", border: "#999", text: "#333" };
-    const btn = document.createElement("button");
-    btn.className = "pf-btn";
-    btn.dataset.filter = paradigm;
-    btn.type = "button";
-    const swatch = document.createElement("span");
-    swatch.className = "btn-swatch";
-    swatch.style.background = c.border;
-    btn.append(swatch, document.createTextNode(paradigm));
-    btn.addEventListener("click", () => setFilter(app, paradigm, btn));
-    container.appendChild(btn);
-  });
-}
-
-// Turns the Risk Regime filter buttons into a live exposure readout — each
-// button shows what share of current portfolio weight sits in that regime,
-// not just a static filter label.
-export function updateRegimeWeights(nodes, weights) {
-  const totals = {};
-  nodes.forEach(n => {
-    totals[n.paradigm] = (totals[n.paradigm] || 0) + ((weights && weights[n.id]) || 0);
-  });
-  document.querySelectorAll('.pf-btn:not([data-filter="none"])').forEach(btn => {
-    let pctEl = btn.querySelector(".pf-btn-weight");
-    if (!pctEl) {
-      pctEl = document.createElement("span");
-      pctEl.className = "pf-btn-weight";
-      btn.appendChild(pctEl);
-    }
-    const pct = totals[btn.dataset.filter] || 0;
-    pctEl.textContent = Math.round(pct * 100) + "%";
-  });
 }
 
 export function buildLegend(app) {
@@ -456,14 +418,8 @@ export function clearSelectionClasses(app) {
   app.cy.elements().removeClass("selected-node selected-edge neighbour-node");
 }
 
-export function setActiveFilterButton(activeBtn) {
-  document.querySelectorAll(".pf-btn").forEach(btn => {
-    btn.classList.remove("active");
-    btn.style.color = "";
-    btn.style.borderColor = "";
-    btn.style.background = "";
-  });
-  activeBtn.classList.add("active");
+function clearLegendActive() {
+  document.querySelectorAll(".legend-item.active").forEach(el => el.classList.remove("active"));
 }
 
 export function resetInfoPanel() {
@@ -503,25 +459,34 @@ export function updateInfoPanel(data, node, app) {
   `;
 }
 
-export function updateEdgeInfoPanel(edge) {
+export function updateEdgeInfoPanel(edge, app) {
   const corr = edge.data("correlation");
   const source = edge.source().data("label");
   const target = edge.target().data("label");
   const sign = corr >= 0 ? "+" : "";
-  const abs = Math.abs(corr);
 
-  let interpretation = "";
-  if (abs >= 0.7)      interpretation = corr > 0 ? "Strong positive — these assets move together closely." : "Strong negative — these assets move in opposite directions.";
-  else if (abs >= 0.4) interpretation = corr > 0 ? "Moderate positive correlation." : "Moderate negative — useful diversification.";
-  else if (abs >= 0.2) interpretation = "Weak correlation — largely independent.";
-  else                 interpretation = "Near-zero correlation — effectively uncorrelated.";
+  const { n, ciLow, ciHigh, pValue } = computeCorrelationSignificance(
+    app.correlationData, edge.source().id(), edge.target().id(), corr
+  );
+  const fmtP = p => !Number.isFinite(p) ? "—" : p < 0.001 ? "< .001" : ("= " + p.toFixed(3).replace(/^0/, ""));
+  const fmtCi = v => Number.isFinite(v) ? (v >= 0 ? "+" : "") + v.toFixed(2) : "—";
 
   document.getElementById("info-content").innerHTML = `
     <strong style="font-size:13px">${source} / ${target}</strong>
     <div style="margin-top:8px">
       <span style="font-size:22px;font-weight:700;color:${corr >= 0 ? "#1a1a1a" : "#a8391f"}">${sign}${corr.toFixed(2)}</span>
     </div>
-    <div style="font-size:11px;color:#666;margin-top:6px;line-height:1.5">${interpretation}</div>
+    <div style="margin-top:10px;border-top:1px solid #e8e8e0;padding-top:8px;font-size:11px;color:#666">
+      <div style="display:flex;justify-content:space-between;padding:2px 0">
+        <span>n</span><span style="font-weight:600;color:#1a1a1a">${n || "—"}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;padding:2px 0">
+        <span>95% CI</span><span style="font-weight:600;color:#1a1a1a">[${fmtCi(ciLow)}, ${fmtCi(ciHigh)}]</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;padding:2px 0">
+        <span>p-value (H0: ρ=0)</span><span style="font-weight:600;color:#1a1a1a">${fmtP(pValue)}</span>
+      </div>
+    </div>
   `;
 }
 
@@ -546,50 +511,8 @@ export function resetView(app) {
   clearSelectionClasses(app);
   hideCard(app);
   resetInfoPanel();
-  const allBtn = document.querySelector('.pf-btn[data-filter="none"]');
-  if (allBtn) setActiveFilterButton(allBtn);
-  app.cy.animate({ fit: { padding: 40 }, duration: 400, easing: "ease-in-out" });
-}
-
-function clearLegendActive() {
-  document.querySelectorAll(".legend-item.active").forEach(el => el.classList.remove("active"));
-}
-
-export function setFilter(app, key, btn) {
-  if (!app.cy) return;
-  clearSearch(app);
-  clearFilterClasses(app);
-  clearSelectionClasses(app);
-  hideCard(app);
-  resetInfoPanel();
-  setActiveFilterButton(btn);
   clearLegendActive();
-
-  if (key === "none") return;
-
-  const c = PARADIGM_COLORS[key] || { border: "#999", bg: "#f0f0f0", text: "#333" };
-  btn.style.color = c.text;
-  btn.style.borderColor = c.border;
-  btn.style.background = c.bg;
-
-  app.cy.nodes().forEach(node => {
-    if (node.data("paradigm") === key) {
-      node.data("hl_border", c.border);
-      node.addClass("highlighted");
-    } else {
-      node.addClass("dimmed");
-    }
-  });
-
-  app.cy.edges().forEach(edge => {
-    const srcParadigm = edge.source().data("paradigm");
-    const tgtParadigm = edge.target().data("paradigm");
-    if (srcParadigm === key && tgtParadigm === key) {
-      edge.addClass("highlighted");
-    } else {
-      edge.addClass("dimmed");
-    }
-  });
+  app.cy.animate({ fit: { padding: 40 }, duration: 400, easing: "ease-in-out" });
 }
 
 export function setClassFilter(app, group, item) {
@@ -599,9 +522,6 @@ export function setClassFilter(app, group, item) {
   clearSelectionClasses(app);
   hideCard(app);
   resetInfoPanel();
-
-  const allBtn = document.querySelector('.pf-btn[data-filter="none"]');
-  if (allBtn) setActiveFilterButton(allBtn);
   clearLegendActive();
 
   if (group === null) return;
@@ -628,12 +548,10 @@ export function setClassFilter(app, group, item) {
 }
 
 export function switchToAllNodesWithoutClearingSearch(app) {
-  const allBtn = document.querySelector('.pf-btn[data-filter="none"]');
-  if (!allBtn) return;
   clearFilterClasses(app);
   clearSelectionClasses(app);
   hideCard(app);
-  setActiveFilterButton(allBtn);
+  clearLegendActive();
 }
 
 export function positionCardForNode(app, node) {
@@ -748,6 +666,97 @@ export function buildStatsPanel(stats) {
     return val >= 0 ? "#2d8a5e" : "#c0385a";
   }
 
+  function renderHistogram(hist) {
+    if (!hist) return `<div class="hist-empty">Not enough daily history to plot a distribution</div>`;
+    const W = 300, chartH = 160, axisY = chartH, labelY = axisY + 15, svgH = labelY + 4;
+    const maxVal = Math.max(...hist.counts, ...hist.normalCounts, 1);
+    const binCount = hist.counts.length;
+    const barW = W / binCount;
+    const pct = v => (v >= 0 ? "+" : "") + (v * 100).toFixed(1) + "%";
+
+    const bars = hist.counts.map((c, i) => {
+      const h = (c / maxVal) * chartH;
+      const binLo = hist.min + i * hist.binWidth;
+      const binHi = binLo + hist.binWidth;
+      return `<rect class="hist-bar" x="${(i * barW).toFixed(1)}" y="${(chartH - h).toFixed(1)}" width="${Math.max(0, barW - 1.2).toFixed(1)}" height="${h.toFixed(1)}" rx="1.5"><title>${pct(binLo)} to ${pct(binHi)}: ${c} day${c === 1 ? "" : "s"}</title></rect>`;
+    }).join("");
+
+    const points = hist.normalCounts.map((c, i) => {
+      const x = (i + 0.5) * barW;
+      const y = chartH - (c / maxVal) * chartH;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(" ");
+
+    const zeroX = ((0 - hist.min) / (hist.max - hist.min)) * W;
+    const zeroLine = zeroX >= 0 && zeroX <= W
+      ? `<line x1="${zeroX.toFixed(1)}" y1="0" x2="${zeroX.toFixed(1)}" y2="${chartH}" class="hist-zero-line" />`
+      : "";
+
+    const tickCount = 5;
+    const ticks = Array.from({ length: tickCount }, (_, i) => {
+      const frac = i / (tickCount - 1);
+      const x = frac * W;
+      const val = hist.min + frac * (hist.max - hist.min);
+      const anchor = i === 0 ? "start" : i === tickCount - 1 ? "end" : "middle";
+      return `
+        <line x1="${x.toFixed(1)}" y1="${axisY}" x2="${x.toFixed(1)}" y2="${axisY + 3}" class="hist-tick" />
+        <text x="${x.toFixed(1)}" y="${labelY}" text-anchor="${anchor}" class="hist-axis-label">${pct(val)}</text>
+      `;
+    }).join("");
+
+    return `
+      <svg viewBox="0 0 ${W} ${svgH}" class="hist-svg">
+        ${bars}
+        ${zeroLine}
+        <polyline points="${points}" class="hist-normal-curve" />
+        <line x1="0" y1="${axisY}" x2="${W}" y2="${axisY}" class="hist-axis-line" />
+        ${ticks}
+      </svg>
+    `;
+  }
+
+  function renderDistStats() {
+    const hist = stats.histogram;
+    const rows = [
+      {
+        label: "Vol (ann.)",
+        value: Number.isFinite(stats.portfolioVol) ? (stats.portfolioVol * 100).toFixed(1) + "%" : "—",
+        color: "#1a1a1a",
+        tooltip: "Annualised realised volatility of the portfolio.",
+      },
+      {
+        label: "Skew",
+        value: fmtRatio(stats.skew),
+        color: Number.isFinite(stats.skew) ? (stats.skew >= 0 ? "#2d8a5e" : "#c0385a") : "#a0a8b0",
+        tooltip: "Skewness of daily returns. Positive: fatter right tail. Negative: fatter left tail.",
+      },
+      {
+        label: "Excess kurtosis",
+        value: fmtRatio(stats.kurtosis),
+        color: Number.isFinite(stats.kurtosis) ? (stats.kurtosis > 0 ? "#c0385a" : "#2d8a5e") : "#a0a8b0",
+        tooltip: "Excess kurtosis of daily returns. Positive values mean fatter tails than a normal distribution.",
+      },
+      {
+        label: "Max 1D gain",
+        value: hist && Number.isFinite(hist.bestDay) ? "+" + (hist.bestDay * 100).toFixed(2) + "%" : "—",
+        color: "#2d8a5e",
+        tooltip: "Largest single-day portfolio gain in the sample.",
+      },
+      {
+        label: "Max 1D loss",
+        value: hist && Number.isFinite(hist.worstDay) ? (hist.worstDay * 100).toFixed(2) + "%" : "—",
+        color: "#c0385a",
+        tooltip: "Largest single-day portfolio loss in the sample.",
+      },
+    ];
+    return rows.map(r => `
+      <div class="dist-stat-row" title="${r.tooltip}">
+        <span class="dist-stat-label">${r.label}</span>
+        <span class="dist-stat-value" style="color:${r.color}">${r.value}</span>
+      </div>
+    `).join("");
+  }
+
   const groups = [
     {
       name: "Performance",
@@ -757,19 +766,19 @@ export function buildStatsPanel(stats) {
           label: "CAGR",
           value: fmtPercent(stats.portfolioReturn),
           color: color(stats.portfolioReturn),
-          tooltip: "Compound Annual Growth Rate — geometric annualised return per selected weighting",
+          tooltip: "Compound Annual Growth Rate: geometric annualised return for the current weighting.",
         },
         {
           label: "Sharpe ratio",
           value: fmtRatio(stats.sharpe),
           color: color(Number.isFinite(stats.sharpe) ? stats.sharpe - 1 : NaN),
-          tooltip: "Sharpe = (CAGR − Rf) / Realised Vol, Rf = 2.6%",
+          tooltip: "Sharpe = (CAGR − Rf) / Realised Vol. Rf = 2.6%.",
         },
         {
           label: "Sortino ratio",
           value: fmtRatio(stats.sortino),
           color: color(Number.isFinite(stats.sortino) ? stats.sortino - 1 : NaN),
-          tooltip: "Sortino = (CAGR − Rf) / Downside Vol, Rf = 2.6%",
+          tooltip: "Sortino = (CAGR − Rf) / Downside Vol. Rf = 2.6%.",
         },
         {
           label: "PSR",
@@ -777,35 +786,7 @@ export function buildStatsPanel(stats) {
           color: Number.isFinite(stats.psr)
             ? (stats.psr >= 0.95 ? "#2d8a5e" : "#c0385a")
             : "#a0a8b0",
-          tooltip: "Probabilistic Sharpe Ratio (Bailey & Lopez de Prado) — confidence that the true daily Sharpe exceeds 0, correcting for skew, kurtosis and sample length (n=" + stats.psrObs + " daily obs)",
-        },
-      ],
-    },
-    {
-      name: "Distribution",
-      cols: 3,
-      rows: [
-        {
-          label: "Realised Vol",
-          value: Number.isFinite(stats.portfolioVol) ? (stats.portfolioVol * 100).toFixed(1) + "%" : "—",
-          color: "#555",
-          tooltip: "Annualised realised volatility of the portfolio (√wᵀΣw)",
-        },
-        {
-          label: "Skew",
-          value: fmtRatio(stats.skew),
-          color: Number.isFinite(stats.skew)
-            ? (stats.skew >= 0 ? "#2d8a5e" : "#c0385a")
-            : "#a0a8b0",
-          tooltip: "Sample skewness of daily portfolio returns — positive means a fatter right tail (occasional large gains), negative means a fatter left tail (occasional large losses)",
-        },
-        {
-          label: "Kurtosis",
-          value: fmtRatio(stats.kurtosis),
-          color: Number.isFinite(stats.kurtosis)
-            ? (stats.kurtosis > 0 ? "#c0385a" : "#2d8a5e")
-            : "#a0a8b0",
-          tooltip: "Excess kurtosis of daily portfolio returns — positive means fatter tails than a normal distribution (more extreme days than the vol number alone implies)",
+          tooltip: "Probabilistic Sharpe Ratio (Bailey and Lopez de Prado). Confidence that true daily Sharpe exceeds 0, adjusted for skew, kurtosis and sample size (n=" + stats.psrObs + ").",
         },
       ],
     },
@@ -817,19 +798,19 @@ export function buildStatsPanel(stats) {
           label: "Max drawdown",
           value: Number.isFinite(stats.maxDrawdown) ? (stats.maxDrawdown * 100).toFixed(1) + "%" : "—",
           color: "#c0385a",
-          tooltip: "Weighted average of individual asset maximum drawdowns",
+          tooltip: "Weighted average of individual asset maximum drawdowns.",
         },
         {
           label: "VaR",
           value: Number.isFinite(stats.var95) ? (stats.var95 * 100).toFixed(1) + "%" : "—",
           color: "#c0385a",
-          tooltip: "Value at Risk — 95% confidence, 1-day horizon. 5% chance of a one-day loss exceeding this, based on the full historical return series",
+          tooltip: "Value at Risk, 95% confidence, 1-day horizon. 5% chance of a daily loss exceeding this level.",
         },
         {
           label: "CVaR",
           value: Number.isFinite(stats.cvar95) ? (stats.cvar95 * 100).toFixed(1) + "%" : "—",
           color: "#c0385a",
-          tooltip: "Conditional Value at Risk (Expected Shortfall) — 95% confidence, 1-day horizon. Average one-day loss on the worst 5% of days",
+          tooltip: "Conditional Value at Risk (Expected Shortfall), 95% confidence, 1-day horizon. Average loss on the worst 5% of days.",
         },
         {
           label: "Mean Corr",
@@ -837,13 +818,21 @@ export function buildStatsPanel(stats) {
           color: Number.isFinite(stats.avgCorrelation)
             ? (stats.avgCorrelation > 0.5 ? "#c0385a" : "#2d8a5e")
             : "#a0a8b0",
-          tooltip: "Mean pairwise correlation across all asset pairs in the portfolio",
+          tooltip: "Mean pairwise correlation across all asset pairs in the portfolio.",
         },
       ],
     },
   ];
 
-  container.innerHTML = groups.map(group => `
+  const distributionBlock = `
+    <div class="stats-group">
+      <div class="stats-group-label">Distribution</div>
+      <div class="hist-wrap">${renderHistogram(stats.histogram)}</div>
+      <div class="dist-stats">${renderDistStats()}</div>
+    </div>
+  `;
+
+  const groupBlock = group => `
     <div class="stats-group">
       <div class="stats-group-label">${group.name}</div>
       <div class="stats-grid stats-grid-${group.cols}">
@@ -855,5 +844,7 @@ export function buildStatsPanel(stats) {
         `).join("")}
       </div>
     </div>
-  `).join("");
+  `;
+
+  container.innerHTML = groupBlock(groups[0]) + distributionBlock + groupBlock(groups[1]);
 }

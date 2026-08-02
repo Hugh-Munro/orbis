@@ -82,12 +82,7 @@
 
     <div id="sidebar-right">
       <div id="stats-panel">
-        <p>Risk & Performance</p>
         <div id="stats-panel-body"></div>
-      </div>
-      <div id="filters">
-        <p>Risk Regime</p>
-        <button class="pf-btn active" data-filter="none" type="button">All assets</button>
       </div>
       <div id="info-panel">
         <p>Details</p>
@@ -120,6 +115,24 @@
       <button class="chart-tab" data-chart="sharpe">Sharpe</button>
     </div>
     <div id="chart-toggles"></div>
+    <div id="drawdown-threshold-wrap" class="chart-control-row">
+      <label class="chart-switch" style="--switch-accent:#c0385a">
+        <input type="checkbox" id="dd-threshold-toggle">
+        <span class="chart-switch-track"><span class="chart-switch-thumb"></span></span>
+      </label>
+      <span class="chart-switch-label">Highlight drawdowns beyond</span>
+      <span id="dd-threshold-controls">
+        <input type="range" id="dd-threshold-slider" min="5" max="80" step="1" value="20">
+        <span id="dd-threshold-value">-20%</span>
+      </span>
+    </div>
+    <div id="vol-sigma-wrap" class="chart-control-row">
+      <label class="chart-switch" style="--switch-accent:#c96a1f">
+        <input type="checkbox" id="vol-sigma-toggle">
+        <span class="chart-switch-track"><span class="chart-switch-thumb"></span></span>
+      </label>
+      <span class="chart-switch-label">Highlight 2σ vol spikes</span>
+    </div>
     <div id="chart-area">
       <svg id="chart-svg"></svg>
       <div id="chart-tooltip"></div>

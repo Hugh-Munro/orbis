@@ -12,12 +12,6 @@ export const GROUP_LABELS = {
   crypto:    "Crypto",
 };
 
-export const PARADIGM_COLORS = {
-  "Risk-On":      { bg: "#fdf0e8", border: "#c06820", text: "#6a3010" },
-  "Risk-Off":     { bg: "#e8f4e8", border: "#3a8a3a", text: "#1a4a1a" },
-  "Real Assets":  { bg: "#f0e8f8", border: "#8050b0", text: "#402060" },
-};
-
 export const GRAPH_LAYOUT_BASE = {
   name: "cola",
   animate: true,

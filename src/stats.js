@@ -11,6 +11,35 @@ export function computeEqualWeights(correlationData, selectedTickers) {
   return Object.fromEntries(tickers.map(t => [t, w]));
 }
 
+// Fisher z-transform significance test for a single pairwise correlation:
+// 95% CI on rho, and a two-tailed p-value against H0: rho = 0. n is the
+// actual overlapping valid-observation count for that specific pair, not
+// the whole-portfolio sample size — two assets can have different history
+// lengths.
+export function computeCorrelationSignificance(correlationData, sourceId, targetId, r) {
+  const dr = correlationData.daily_returns;
+  if (!dr || !dr[sourceId] || !dr[targetId]) {
+    return { n: 0, ciLow: NaN, ciHigh: NaN, pValue: NaN };
+  }
+  const a = dr[sourceId].values;
+  const b = dr[targetId].values;
+  const len = Math.min(a.length, b.length);
+  let n = 0;
+  for (let i = 0; i < len; i++) {
+    if (Number.isFinite(a[i]) && Number.isFinite(b[i])) n++;
+  }
+  if (n < 4) return { n, ciLow: NaN, ciHigh: NaN, pValue: NaN };
+
+  const rClamped = Math.max(-0.999999, Math.min(0.999999, r));
+  const z = Math.atanh(rClamped);
+  const se = 1 / Math.sqrt(n - 3);
+  const ciLow = Math.tanh(z - 1.96 * se);
+  const ciHigh = Math.tanh(z + 1.96 * se);
+  const pValue = 2 * (1 - normalCdf(Math.abs(z / se)));
+
+  return { n, ciLow, ciHigh, pValue };
+}
+
 export function computeInverseVolWeights(correlationData, selectedTickers) {
   const assets = activeAssetEntries(correlationData, selectedTickers);
   const invVols = assets.map(([id, a]) => [id, 1 / a.vol]);
@@ -57,6 +86,45 @@ function computeHistoricalVarCvar(series) {
   const tail = sorted.slice(0, idx + 1);
   const cvar95 = tail.reduce((sum, v) => sum + v, 0) / tail.length;
   return { var95, cvar95 };
+}
+
+function normalPdf(x, mean, std) {
+  return Math.exp(-0.5 * ((x - mean) / std) ** 2) / (std * Math.sqrt(2 * Math.PI));
+}
+
+// Bins the daily portfolio return series for a histogram, clipped to ±3σ so
+// a single extreme day doesn't blow out the scale, plus the expected count
+// per bin under a fitted normal — the overlay that makes skew/kurtosis
+// visually legible rather than just abstract numbers.
+function computeReturnHistogram(series, binCount = 22) {
+  const n = series ? series.length : 0;
+  if (n < 20) return null;
+  const mean = series.reduce((s, v) => s + v, 0) / n;
+  const variance = series.reduce((s, v) => s + (v - mean) ** 2, 0) / (n - 1);
+  const std = Math.sqrt(variance);
+  if (!std) return null;
+
+  const range = 3 * std;
+  const min = mean - range;
+  const max = mean + range;
+  const binWidth = (max - min) / binCount;
+
+  const counts = new Array(binCount).fill(0);
+  series.forEach(v => {
+    const clamped = Math.min(max - 1e-12, Math.max(min, v));
+    const idx = Math.min(binCount - 1, Math.max(0, Math.floor((clamped - min) / binWidth)));
+    counts[idx]++;
+  });
+
+  const normalCounts = counts.map((_, i) => {
+    const center = min + (i + 0.5) * binWidth;
+    return normalPdf(center, mean, std) * n * binWidth;
+  });
+
+  const bestDay = Math.max(...series);
+  const worstDay = Math.min(...series);
+
+  return { min, max, binWidth, counts, normalCounts, mean, std, n, bestDay, worstDay };
 }
 
 function erf(x) {
@@ -160,6 +228,7 @@ export function computePortfolioStats(correlationData, weights) {
   const dailySeries = getPortfolioDailySeries(correlationData, w, tickers);
   const { var95, cvar95 } = computeHistoricalVarCvar(dailySeries);
   const { skew, kurtosis, psr } = computeDistributionStats(dailySeries, RISK_FREE_RATE / 252);
+  const histogram = computeReturnHistogram(dailySeries);
 
   return {
     portfolioReturn,
@@ -174,6 +243,7 @@ export function computePortfolioStats(correlationData, weights) {
     kurtosis,
     psr,
     psrObs: dailySeries ? dailySeries.length : 0,
+    histogram,
     corrMatrix,
     tickers,
   };

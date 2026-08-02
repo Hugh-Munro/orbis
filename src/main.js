@@ -1,9 +1,10 @@
 import { loadCorrelationData, parseGraphData, degreeMap, validateGraphData } from "./data.js";
 import { createGraph, setupGraphEvents, setNodeUniverseVisibility } from "./graph.js";
-import { buildSidebar, buildLegend, buildStatsPanel, buildWeightingPanel, buildUniversePanel, buildPortfolioValuePanel, setPortfolioValueDisplay, resetView, setFilter, updateRegimeWeights } from "./ui.js";
+import { buildLegend, buildStatsPanel, buildWeightingPanel, buildUniversePanel, buildPortfolioValuePanel, setPortfolioValueDisplay, resetView } from "./ui.js";
 import { setupSearch } from "./search.js";
 import { computePortfolioStats, computeEqualWeights, computeInverseVolWeights } from "./stats.js";
 import { openChartView } from "./chart.js";
+import { getSavedPortfolios } from "./savedPortfolios.js";
 
 const app = {
   cy: null,
@@ -44,7 +45,6 @@ async function init() {
 
     const deg = degreeMap(nodes, edges);
 
-    buildSidebar(app, nodes);
     buildLegend(app);
 
     app.cy = createGraph(app, nodes, edges, deg);
@@ -67,7 +67,6 @@ async function init() {
 
       const stats = computePortfolioStats(correlationData, weights);
       buildStatsPanel(stats);
-      updateRegimeWeights(nodes, weights);
 
       document.querySelectorAll(".stat-item").forEach(tile => {
         tile.style.cursor = "pointer";
@@ -98,13 +97,22 @@ async function init() {
     refreshStats("equal");
     buildWeightingPanel(app, correlationData, refreshStats);
 
+    // Open straight into the most recently saved portfolio, if one exists,
+    // by replaying the same tab-click + load-click a user would do manually
+    // — reuses the existing load logic instead of duplicating it.
+    const savedPortfolios = getSavedPortfolios();
+    if (savedPortfolios.length) {
+      const savedTab = document.querySelector('.wt-tab[data-scheme="saved"]');
+      if (savedTab) {
+        savedTab.click();
+        const mostRecent = savedPortfolios[savedPortfolios.length - 1];
+        const loadBtn = document.querySelector(`.saved-load-btn[data-id="${mostRecent.id}"]`);
+        if (loadBtn) loadBtn.click();
+      }
+    }
+
     setupGraphEvents(app);
     setupSearch(app);
-
-    const allBtn = document.querySelector('.pf-btn[data-filter="none"]');
-    if (allBtn) {
-      allBtn.addEventListener("click", () => setFilter(app, "none", allBtn));
-    }
 
     document.getElementById("reset-btn").addEventListener("click", () => {
       resetView(app);
