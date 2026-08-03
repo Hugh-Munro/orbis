@@ -1,7 +1,5 @@
 import {
   switchToAllNodesWithoutClearingSearch,
-  updateSearchInfo,
-  resetInfoPanel,
 } from "./ui.js";
 
 function nodeMatchesQuery(node, q) {
@@ -18,17 +16,12 @@ function runSearch(app, rawQuery) {
 
   app.cy.elements().removeClass("search-match search-dimmed");
 
-  if (!q) {
-    resetInfoPanel();
-    return;
-  }
+  if (!q) return;
 
   switchToAllNodesWithoutClearingSearch(app);
 
   const matchedNodes = app.cy.nodes().filter(node => nodeMatchesQuery(node, q));
   const matchedIds = new Set(matchedNodes.map(node => node.id()));
-
-  updateSearchInfo(rawQuery, matchedNodes.length);
 
   app.cy.nodes().forEach(node => {
     if (matchedIds.has(node.id())) {
@@ -63,7 +56,6 @@ export function setupSearch(app) {
     if (event.key === "Escape") {
       input.value = "";
       app.cy.elements().removeClass("search-match search-dimmed");
-      resetInfoPanel();
       return;
     }
 
@@ -86,7 +78,6 @@ export function setupSearch(app) {
   input.addEventListener("search", () => {
     if (!input.value.trim()) {
       app.cy.elements().removeClass("search-match search-dimmed");
-      resetInfoPanel();
     }
   });
 }

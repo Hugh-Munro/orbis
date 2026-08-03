@@ -769,31 +769,6 @@ input {
   letter-spacing: -0.01em;
 }
 
-#reset-wrap {
-  padding: 0 12px 14px;
-}
-
-#reset-btn {
-  width: 100%;
-  background: transparent;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  color: var(--faint);
-  cursor: pointer;
-  font-size: 11px;
-  font-family: var(--font-main);
-  padding: 6px 11px;
-  text-align: center;
-  letter-spacing: 0.04em;
-  text-transform: none;
-  transition: all 0.15s;
-}
-
-#reset-btn:hover {
-  color: var(--ink);
-  border-color: var(--ink);
-}
-
 #canvas-legend {
   position: absolute;
   bottom: 16px;
@@ -801,6 +776,34 @@ input {
   transform: translateX(-50%);
   z-index: 15;
   pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#reset-btn {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--faint);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0;
+  box-shadow: var(--shadow);
+  transition: all 0.15s;
+}
+
+#reset-btn:hover {
+  color: var(--ink);
+  border-color: var(--ink);
 }
 
 #legend-items {
@@ -846,31 +849,6 @@ input {
   flex-shrink: 0;
 }
 
-#info-panel {
-  margin: auto 12px 6px;
-  padding: 14px 12px;
-  background: #fff;
-  border-radius: 16px;
-  box-shadow: 0 2px 6px rgba(15, 27, 45, 0.08), 0 1px 2px rgba(15, 27, 45, 0.06);
-}
-
-#info-panel p {
-  font-size: 10px;
-  letter-spacing: 0.04em;
-  text-transform: none;
-  color: var(--faint);
-  margin-bottom: 6px;
-}
-
-#info-content {
-  font-size: 12px;
-  color: #4a5568;
-  line-height: 1.6;
-}
-
-#info-content strong {
-  color: var(--ink);
-}
 
 .floating-card {
   position: absolute;
@@ -1003,6 +981,31 @@ input {
   font-family: var(--font-main);
   font-size: 11px;
   font-weight: 600;
+}
+
+.fc-edge-value {
+  font-family: var(--font-main);
+  font-size: 24px;
+  font-weight: 700;
+  margin: 4px 0 10px;
+}
+
+.fc-edge-stats {
+  border-top: 1px solid #e8e8e0;
+  padding-top: 8px;
+  font-size: 11px;
+  color: #666;
+}
+
+.fc-edge-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 0;
+}
+
+.fc-edge-row-val {
+  font-weight: 600;
+  color: #1a1a1a;
 }
 
 /* Stage: horizontal slide container */
@@ -1207,7 +1210,8 @@ input {
   overflow: hidden;
 }
 
-.corr-window-btn {
+.corr-window-btn,
+.ratio-btn {
   background: transparent;
   border: none;
   border-right: 1px solid var(--line);
@@ -1220,18 +1224,96 @@ input {
   transition: all 0.15s;
 }
 
-.corr-window-btn:last-child {
+.corr-window-btn:last-child,
+.ratio-btn:last-child {
   border-right: none;
 }
 
-.corr-window-btn:hover {
+.corr-window-btn:hover,
+.ratio-btn:hover {
   background: var(--bg);
 }
 
-.corr-window-btn.active {
+.corr-window-btn.active,
+.ratio-btn.active {
   background: var(--ink);
   color: #fff;
   font-weight: 600;
+}
+
+.donut-slice {
+  cursor: pointer;
+  transition: opacity 0.15s, filter 0.15s;
+}
+
+.donut-slice:hover {
+  opacity: 1;
+  filter: brightness(1.08);
+}
+
+.donut-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  margin: 0 -8px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.donut-legend-row:hover {
+  background: var(--bg);
+}
+
+.donut-legend-row.pinned {
+  background: var(--bg);
+  font-weight: 600;
+}
+
+.donut-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.donut-legend-label {
+  flex: 1;
+  font-size: 12px;
+  color: #4a5568;
+  font-family: var(--font-main);
+}
+
+.donut-legend-value {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1a1a1a;
+  font-family: var(--font-main);
+}
+
+.donut-sub-wrap {
+  display: none;
+  padding: 2px 8px 8px 26px;
+}
+
+.donut-sub-wrap.visible {
+  display: block;
+}
+
+.donut-sub-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 3px 0;
+  font-size: 11px;
+  color: var(--faint);
+  font-family: var(--font-main);
+}
+
+.donut-sub-weight {
+  font-weight: 600;
+  color: #6b7480;
 }
 
 #chart-area {

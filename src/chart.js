@@ -1,5 +1,5 @@
-import { GROUP_COLORS } from "./constants.js";
-import { computeRollingCorrelation } from "./stats.js";
+import { GROUP_COLORS, GROUP_LABELS } from "./constants.js";
+import { computeRollingCorrelation, BENCHMARK_TICKER } from "./stats.js";
 
 const WINDOW = 30;
 const TRADING_DAYS = 252;
@@ -217,7 +217,7 @@ function drawChart(port, assetSeries, correlationData, showSigma) {
   markup += `<line x1="${PAD.left}" y1="${avgY}" x2="${PAD.left + innerW}" y2="${avgY}"
     stroke="#0f1b2d" stroke-width="1" stroke-dasharray="6,4" opacity="0.25"/>`;
   markup += `<text x="${PAD.left + innerW + 6}" y="${avgY + 4}"
-    font-family="Inter, sans-serif" font-size="9" fill="#0f1b2d" opacity="0.4">avg</text>`;
+    font-family="Inter, sans-serif" font-size="9" fill="#0f1b2d" opacity="0.5">avg ${(avgVol * 100).toFixed(0)}%</text>`;
 
   // 2σ vol-spike bands — full chart height, spans every contiguous stretch
   // where realised vol is more than 2 standard deviations above its own mean.
@@ -485,7 +485,78 @@ function drawDrawdown(correlationData, weights, activeSeries, threshold) {
   });
 }
 
-function drawRollingSharpe(correlationData, weights, activeSeries) {
+const RATIO_WINDOW = 90;
+// Calmar needs its own, much longer window — max drawdown is a slow-moving
+// statistic, and a 90-day rolling drawdown is mostly window-size noise
+// rather than signal. 252D (~1yr) is closer to how this ratio is actually
+// used in practice.
+const CALMAR_WINDOW = 252;
+
+function rollingSharpeSeries(values, rfDaily, window = RATIO_WINDOW) {
+  return values.map((_, i) => {
+    if (i < window - 1) return null;
+    const slice = values.slice(i - window + 1, i + 1);
+    const mean = slice.reduce((a, b) => a + b, 0) / slice.length;
+    const variance = slice.reduce((a, b) => a + (b - mean) ** 2, 0) / (slice.length - 1);
+    const vol = Math.sqrt(variance * TRADING_DAYS);
+    const annRet = (mean - rfDaily) * TRADING_DAYS;
+    return vol === 0 ? null : annRet / vol;
+  });
+}
+
+function rollingSortinoSeries(values, rfDaily, window = RATIO_WINDOW) {
+  return values.map((_, i) => {
+    if (i < window - 1) return null;
+    const slice = values.slice(i - window + 1, i + 1);
+    const mean = slice.reduce((a, b) => a + b, 0) / slice.length;
+    const downside = slice.filter(v => v < 0);
+    if (!downside.length) return null;
+    const downsideVar = downside.reduce((a, b) => a + b * b, 0) / downside.length;
+    const downsideVol = Math.sqrt(downsideVar * TRADING_DAYS);
+    const annRet = (mean - rfDaily) * TRADING_DAYS;
+    return downsideVol === 0 ? null : annRet / downsideVol;
+  });
+}
+
+function rollingInfoRatioSeries(values, benchValues, window = RATIO_WINDOW) {
+  return values.map((_, i) => {
+    if (i < window - 1 || !benchValues) return null;
+    const slice = values.slice(i - window + 1, i + 1);
+    const benchSlice = benchValues.slice(i - window + 1, i + 1);
+    const excess = slice.map((v, j) => v - benchSlice[j]);
+    const mean = excess.reduce((a, b) => a + b, 0) / excess.length;
+    const variance = excess.reduce((a, b) => a + (b - mean) ** 2, 0) / (excess.length - 1);
+    const trackingError = Math.sqrt(variance * TRADING_DAYS);
+    return trackingError === 0 ? null : (mean * TRADING_DAYS) / trackingError;
+  });
+}
+
+function rollingCalmarSeries(values, window = CALMAR_WINDOW) {
+  return values.map((_, i) => {
+    if (i < window - 1) return null;
+    const slice = values.slice(i - window + 1, i + 1);
+    let cum = 1, peak = 1, maxDD = 0;
+    slice.forEach(v => {
+      cum *= (1 + v);
+      if (cum > peak) peak = cum;
+      const dd = (cum - peak) / peak;
+      if (dd < maxDD) maxDD = dd;
+    });
+    if (maxDD === 0 || cum <= 0) return null;
+    const years = slice.length / TRADING_DAYS;
+    const annRet = Math.pow(cum, 1 / years) - 1;
+    return annRet / Math.abs(maxDD);
+  });
+}
+
+const RATIO_TITLES = {
+  sharpe:  "Rolling Sharpe (90D)",
+  sortino: "Rolling Sortino (90D)",
+  calmar:  "Rolling Calmar (252D)",
+  ir:      "Rolling Information Ratio (90D)",
+};
+
+function drawRollingSharpe(correlationData, weights, activeSeries, ratioType = "sharpe") {
   lockedSeries = null;
   const area = document.getElementById("chart-area");
   const W = area.clientWidth || 800;
@@ -494,41 +565,36 @@ function drawRollingSharpe(correlationData, weights, activeSeries) {
   const innerW = W - PAD.left - PAD.right;
   const innerH = H - PAD.top - PAD.bottom;
 
-  const SHARPE_WINDOW = 90;
-  const RF_DAILY = 0.026 / 252;
+  const rfDaily = (correlationData.riskFreeRate ?? 0.026) / TRADING_DAYS;
   const tickers = Object.keys(weights);
   const dates = correlationData.daily_returns[tickers[0]].dates;
+  const benchValues = correlationData.daily_returns[BENCHMARK_TICKER]?.values;
 
-  function rollingSharpe(values, window = SHARPE_WINDOW) {
-    return values.map((_, i) => {
-      if (i < window - 1) return null;
-      const slice = values.slice(i - window + 1, i + 1);
-      const mean = slice.reduce((a, b) => a + b, 0) / slice.length;
-      const variance = slice.reduce((a, b) => a + (b - mean) ** 2, 0) / (slice.length - 1);
-      const vol = Math.sqrt(variance * TRADING_DAYS);
-      const annRet = (mean - RF_DAILY) * TRADING_DAYS;
-      return vol === 0 ? null : annRet / vol;
-    });
+  function computeSeries(values) {
+    if (ratioType === "sortino") return rollingSortinoSeries(values, rfDaily);
+    if (ratioType === "calmar") return rollingCalmarSeries(values);
+    if (ratioType === "ir") return rollingInfoRatioSeries(values, benchValues);
+    return rollingSharpeSeries(values, rfDaily);
   }
 
-  // Portfolio daily returns then rolling sharpe
+  // Portfolio daily returns then the selected rolling ratio
   const portReturns = dates.map((d, i) =>
     tickers.reduce((sum, t) => sum + (weights[t] || 0) * correlationData.daily_returns[t].values[i], 0)
   );
-  const portSharpe = rollingSharpe(portReturns);
+  const portRatio = computeSeries(portReturns);
 
-  // Per-asset rolling sharpe
-  const assetSharpes = {};
+  // Per-asset rolling ratio
+  const assetRatios = {};
   tickers.forEach(t => {
-    assetSharpes[t] = rollingSharpe(correlationData.daily_returns[t].values);
+    assetRatios[t] = computeSeries(correlationData.daily_returns[t].values);
   });
 
   const allSeries = [
-    { values: portSharpe, color: "#0f1b2d", width: 2, label: "Portfolio" },
+    { values: portRatio, color: "#0f1b2d", width: 2, label: "Portfolio" },
     ...tickers
       .filter(t => activeSeries && activeSeries[t])
       .map(t => ({
-        values: assetSharpes[t],
+        values: assetRatios[t],
         color: GROUP_COLORS[correlationData.assets[t].class?.toLowerCase()]?.border || "#888",
         width: 1.5,
         label: correlationData.assets[t].name,
@@ -551,11 +617,15 @@ function drawRollingSharpe(correlationData, weights, activeSeries) {
   let markup = buildSVGScaffold(W, H, PAD, innerW, innerH, yTickVals, yScale, xScale,
     buildXTicks(dates), v => v.toFixed(1));
 
-  // Zero line
+  // Zero line — the "equivalent marker" to the avg line on the vol chart:
+  // rolling Sharpe doesn't have a meaningful average to anchor on, so zero
+  // (skill vs. no skill) is the reference point instead.
   if (minY < 0 && maxY > 0) {
     const zeroY = yScale(0);
     markup += `<line x1="${PAD.left}" y1="${zeroY}" x2="${PAD.left + innerW}" y2="${zeroY}"
       stroke="#0f1b2d" stroke-width="1" opacity="0.15"/>`;
+    markup += `<text x="${PAD.left + innerW + 6}" y="${zeroY + 4}"
+      font-family="Inter, sans-serif" font-size="9" fill="#0f1b2d" opacity="0.5">0.0</text>`;
   }
 
   // Series lines — split at nulls
@@ -593,6 +663,148 @@ function drawRollingSharpe(correlationData, weights, activeSeries) {
     if (v === null) return "—";
     const col = v >= 1 ? "#2d8a5e" : v >= 0 ? "#888" : "#c0385a";
     return `<span style="color:${col}">${v.toFixed(2)}</span>`;
+  });
+}
+
+// ── Concentration donut ────────────────────────────────────────────────────────
+
+function polarToCartesian(cx, cy, r, angleDeg) {
+  const rad = (angleDeg - 90) * Math.PI / 180;
+  return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+}
+
+function describeDonutSlice(cx, cy, rOuter, rInner, startAngle, endAngle) {
+  const startOuter = polarToCartesian(cx, cy, rOuter, endAngle);
+  const endOuter = polarToCartesian(cx, cy, rOuter, startAngle);
+  const startInner = polarToCartesian(cx, cy, rInner, endAngle);
+  const endInner = polarToCartesian(cx, cy, rInner, startAngle);
+  const largeArc = endAngle - startAngle <= 180 ? "0" : "1";
+  return [
+    "M", startOuter.x.toFixed(2), startOuter.y.toFixed(2),
+    "A", rOuter, rOuter, 0, largeArc, 0, endOuter.x.toFixed(2), endOuter.y.toFixed(2),
+    "L", endInner.x.toFixed(2), endInner.y.toFixed(2),
+    "A", rInner, rInner, 0, largeArc, 1, startInner.x.toFixed(2), startInner.y.toFixed(2),
+    "Z",
+  ].join(" ");
+}
+
+let concentrationPinned = null;
+
+function drawConcentration(correlationData, weights) {
+  const area = document.getElementById("chart-area");
+  const tooltip = document.getElementById("chart-tooltip");
+  const tickers = Object.keys(weights);
+
+  const classWeights = {};
+  const classAssets = {};
+  tickers.forEach(t => {
+    const cls = (correlationData.assets[t].class || "").toLowerCase();
+    const w = weights[t] || 0;
+    classWeights[cls] = (classWeights[cls] || 0) + w;
+    (classAssets[cls] = classAssets[cls] || []).push({ name: correlationData.assets[t].name, weight: w });
+  });
+  Object.values(classAssets).forEach(list => list.sort((a, b) => b.weight - a.weight));
+
+  const slices = Object.entries(classWeights)
+    .filter(([, w]) => w > 0)
+    .sort((a, b) => b[1] - a[1]);
+
+  const cx = 190, cy = 210, rOuter = 130, rInner = 78;
+  let angle = 0;
+  let paths = "";
+  slices.forEach(([cls, w]) => {
+    const sweep = w * 360;
+    const c = GROUP_COLORS[cls] || { border: "#888" };
+    paths += `<path class="donut-slice" data-class="${cls}" d="${describeDonutSlice(cx, cy, rOuter, rInner, angle, angle + sweep)}"
+      fill="${c.border}" opacity="0.85" stroke="#fff" stroke-width="2"></path>`;
+    angle += sweep;
+  });
+
+  const topLabel = slices.length
+    ? `${GROUP_LABELS[slices[0][0]] || slices[0][0]}<tspan x="${cx}" dy="18" font-size="13" fill="#a0a8b0">${(slices[0][1] * 100).toFixed(0)}%</tspan>`
+    : "";
+
+  const legendRows = slices.map(([cls, w]) => {
+    const c = GROUP_COLORS[cls] || { border: "#888" };
+    const pinned = concentrationPinned === cls;
+    const subRows = classAssets[cls].map(a => `
+      <div class="donut-sub-row">
+        <span class="donut-sub-name">${a.name}</span>
+        <span class="donut-sub-weight">${(a.weight * 100).toFixed(1)}%</span>
+      </div>
+    `).join("");
+    return `
+      <div class="donut-legend-row${pinned ? " pinned" : ""}" data-class="${cls}">
+        <span class="donut-legend-dot" style="background:${c.border}"></span>
+        <span class="donut-legend-label">${GROUP_LABELS[cls] || cls}</span>
+        <span class="donut-legend-value">${(w * 100).toFixed(1)}%</span>
+      </div>
+      <div class="donut-sub-wrap${pinned ? " visible" : ""}">${subRows}</div>
+    `;
+  }).join("");
+
+  area.innerHTML = `
+    <div style="display:flex;align-items:flex-start;height:100%;padding:24px 40px;gap:48px;overflow-y:auto;">
+      <svg width="380" height="420" viewBox="0 0 380 420" style="flex-shrink:0;">
+        ${paths}
+        <text x="${cx}" y="${cy - 4}" text-anchor="middle" font-size="16" font-weight="700" fill="#1a1a1a" font-family="Inter,sans-serif">${topLabel}</text>
+      </svg>
+      <div style="min-width:220px;padding-top:4px;">
+        <div style="font-size:10px;color:#a0a8b0;letter-spacing:0.05em;margin-bottom:8px;font-family:Inter,sans-serif;">Concentration by asset class</div>
+        ${legendRows}
+      </div>
+    </div>
+  `;
+
+  // Hover previews the constituent assets in the shared chart tooltip; click
+  // pins that same breakdown open inline in the legend so it survives the
+  // mouse moving away (hover alone would collapse it the instant you tried
+  // to actually read the list).
+  function showTooltip(cls, evt) {
+    const rows = classAssets[cls].map(a =>
+      `<div style="display:flex;justify-content:space-between;gap:16px;margin-bottom:2px;">
+        <span style="color:#666">${a.name}</span>
+        <span style="font-weight:600">${(a.weight * 100).toFixed(1)}%</span>
+      </div>`
+    ).join("");
+    tooltip.innerHTML = `<div style="font-size:10px;color:#a0a8b0;margin-bottom:5px;">${GROUP_LABELS[cls] || cls}</div>${rows}`;
+    tooltip.style.display = "block";
+    moveTooltip(evt);
+  }
+
+  function moveTooltip(evt) {
+    const areaRect = area.getBoundingClientRect();
+    const tipX = evt.clientX - areaRect.left + 14;
+    const tipY = evt.clientY - areaRect.top - 10;
+    const flipLeft = tipX + 200 > areaRect.width;
+    tooltip.style.left = flipLeft ? `${tipX - 220}px` : `${tipX}px`;
+    tooltip.style.top = `${Math.max(8, tipY)}px`;
+  }
+
+  function hideTooltip() {
+    tooltip.style.display = "none";
+  }
+
+  function togglePin(cls) {
+    concentrationPinned = concentrationPinned === cls ? null : cls;
+    hideTooltip();
+    drawConcentration(correlationData, weights);
+  }
+
+  area.querySelectorAll(".donut-slice").forEach(slice => {
+    const cls = slice.dataset.class;
+    slice.addEventListener("mouseenter", e => showTooltip(cls, e));
+    slice.addEventListener("mousemove", moveTooltip);
+    slice.addEventListener("mouseleave", hideTooltip);
+    slice.addEventListener("click", () => togglePin(cls));
+  });
+
+  area.querySelectorAll(".donut-legend-row").forEach(row => {
+    const cls = row.dataset.class;
+    row.addEventListener("mouseenter", e => showTooltip(cls, e));
+    row.addEventListener("mousemove", moveTooltip);
+    row.addEventListener("mouseleave", hideTooltip);
+    row.addEventListener("click", () => togglePin(cls));
   });
 }
 
@@ -720,6 +932,9 @@ export function openChartView(correlationData, weights, setView, initialTab = "v
     const corrWindowWrap = document.getElementById("corr-window-wrap");
     const corrWindowBtns = document.querySelectorAll(".corr-window-btn");
     let corrWindow = "full";
+    const ratioWrap = document.getElementById("ratio-toggle-wrap");
+    const ratioBtns = document.querySelectorAll(".ratio-btn");
+    let currentRatio = "sharpe";
 
     function getActiveSeries() {
       const s = {};
@@ -736,7 +951,8 @@ export function openChartView(correlationData, weights, setView, initialTab = "v
       else if (currentChart === "returns") drawCumulativeReturns(correlationData, weights, getActiveSeries());
       else if (currentChart === "drawdown") drawDrawdown(correlationData, weights, getActiveSeries(), getDrawdownThreshold());
       else if (currentChart === "corr") drawCorrelationMatrix(correlationData, corrWindow);
-      else if (currentChart === "sharpe") drawRollingSharpe(correlationData, weights, getActiveSeries());
+      else if (currentChart === "concentration") drawConcentration(correlationData, weights);
+      else if (currentChart === "sharpe") drawRollingSharpe(correlationData, weights, getActiveSeries(), currentRatio);
     }
 
     sigmaToggle.addEventListener("change", redraw);
@@ -746,6 +962,16 @@ export function openChartView(correlationData, weights, setView, initialTab = "v
         corrWindowBtns.forEach(b => b.classList.remove("active"));
         btn.classList.add("active");
         corrWindow = btn.dataset.window;
+        redraw();
+      });
+    });
+
+    ratioBtns.forEach(btn => {
+      btn.addEventListener("click", () => {
+        ratioBtns.forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        currentRatio = btn.dataset.ratio;
+        document.getElementById("chart-title").textContent = RATIO_TITLES[currentRatio];
         redraw();
       });
     });
@@ -771,12 +997,16 @@ export function openChartView(correlationData, weights, setView, initialTab = "v
     }
 
     const titles = {
-      vol:      "Realised Volatility (30D)",
-      corr:     "Correlation Heatmap",
-      returns:  "Cumulative Returns",
-      drawdown: "Maximum Drawdown",
-      sharpe:   "Rolling Sharpe (90D)",
+      vol:           "Realised Volatility (30D)",
+      corr:          "Correlation Heatmap",
+      concentration: "Portfolio Concentration",
+      returns:       "Cumulative Returns",
+      drawdown:      "Maximum Drawdown",
     };
+
+    function titleFor(chart) {
+      return chart === "sharpe" ? RATIO_TITLES[currentRatio] : titles[chart];
+    }
 
     tabs.forEach(tab => {
       tab.addEventListener("click", () => {
@@ -784,11 +1014,12 @@ export function openChartView(correlationData, weights, setView, initialTab = "v
         tab.classList.add("active");
         moveIndicator(tab);
         currentChart = tab.dataset.chart;
-        document.getElementById("chart-title").textContent = titles[currentChart];
-        togglesWrap.style.display = currentChart === "corr" ? "none" : "flex";
+        document.getElementById("chart-title").textContent = titleFor(currentChart);
+        togglesWrap.style.display = (currentChart === "corr" || currentChart === "concentration") ? "none" : "flex";
         ddWrap.classList.toggle("visible", currentChart === "drawdown");
         sigmaWrap.classList.toggle("visible", currentChart === "vol");
         corrWindowWrap.classList.toggle("visible", currentChart === "corr");
+        ratioWrap.classList.toggle("visible", currentChart === "sharpe");
         redraw();
       });
     });
@@ -804,11 +1035,12 @@ export function openChartView(correlationData, weights, setView, initialTab = "v
       currentChart = initTab.dataset.chart;
       requestAnimationFrame(() => moveIndicator(initTab));
     }
-    togglesWrap.style.display = currentChart === "corr" ? "none" : "flex";
+    togglesWrap.style.display = (currentChart === "corr" || currentChart === "concentration") ? "none" : "flex";
     ddWrap.classList.toggle("visible", currentChart === "drawdown");
     sigmaWrap.classList.toggle("visible", currentChart === "vol");
     corrWindowWrap.classList.toggle("visible", currentChart === "corr");
-    document.getElementById("chart-title").textContent = titles[currentChart];
+    ratioWrap.classList.toggle("visible", currentChart === "sharpe");
+    document.getElementById("chart-title").textContent = titleFor(currentChart);
     redraw();
   });
 }

@@ -300,7 +300,7 @@ function computeDistributionStats(series, dailyRf) {
 // the universe) — excess annualised return per unit of annualised tracking
 // error. The benchmark is used purely as a return/vol reference here,
 // independent of whether it's actually held in the current weighting.
-const BENCHMARK_TICKER = "CSPX.L";
+export const BENCHMARK_TICKER = "CSPX.L";
 
 function computeInformationRatio(correlationData, weights, tickers, portfolioReturn) {
   const dr = correlationData.daily_returns;
@@ -389,6 +389,7 @@ export function computePortfolioStats(correlationData, weights, portfolioValue =
     : 0;
 
   const maxDrawdown = tickers.reduce((sum, t) => sum + w[t] * correlationData.assets[t].maxDrawdown, 0);
+  const calmar = maxDrawdown !== 0 ? portfolioReturn / Math.abs(maxDrawdown) : NaN;
   const effectiveN = computeEffectiveN(corrMatrix, vols, w, tickers);
   const daysToLiquidate = computePortfolioDaysToLiquidate(correlationData, w, tickers, portfolioValue);
 
@@ -402,6 +403,7 @@ export function computePortfolioStats(correlationData, weights, portfolioValue =
     portfolioVol,
     sharpe,
     sortino,
+    calmar,
     informationRatio,
     avgCorrelation,
     maxDrawdown,

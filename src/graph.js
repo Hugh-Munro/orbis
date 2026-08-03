@@ -4,9 +4,9 @@ import {
   showCard,
   positionCardForNode,
   hideCard,
-  updateInfoPanel,
-  updateEdgeInfoPanel,
-  resetInfoPanel,
+  showEdgeCard,
+  hideEdgeCard,
+  positionCardForEdge,
 } from "./ui.js";
 
 if (window.cytoscape && window.cytoscapeCola && !window.__colaRegistered) {
@@ -297,8 +297,8 @@ export function setupGraphEvents(app) {
     app.selectedNode = node;
     app.selectedEdge = null;
     node.connectedEdges().addClass("selected-edge");
+    hideEdgeCard(app);
     showCard(app, data, node);
-    updateInfoPanel(data, node, app);
   });
 
   app.cy.on("tap", "edge", event => {
@@ -308,11 +308,12 @@ export function setupGraphEvents(app) {
     clearSelectionClasses(app);
     hideCard(app);
     edge.addClass("selected-edge");
-    updateEdgeInfoPanel(edge, app);
+    showEdgeCard(edge, app);
   });
 
   app.cy.on("pan zoom resize", () => {
     if (app.selectedNode) positionCardForNode(app, app.selectedNode);
+    if (app.selectedEdge) positionCardForEdge(app, app.selectedEdge);
   });
 
   app.cy.on("mouseover", "edge", () => { document.body.style.cursor = "pointer"; });
@@ -327,7 +328,7 @@ export function setupGraphEvents(app) {
       clearFocus(app);
       clearSelectionClasses(app);
       hideCard(app);
-      resetInfoPanel();
+      hideEdgeCard(app);
       app.selectedNode = null;
       app.selectedEdge = null;
     }

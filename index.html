@@ -67,6 +67,9 @@
       <div id="cy"></div>
       <div id="canvas-legend">
         <div id="legend-items"></div>
+        <button id="reset-btn" type="button" title="Reset graph">
+          <i class="ti ti-refresh"></i>
+        </button>
       </div>
       <div class="floating-card" id="fc">
         <div class="fc-header">
@@ -78,20 +81,18 @@
         <div class="fc-mini-grid" id="fc-mini-grid"></div>
         <div class="fc-corr-section" id="fc-corr-section"></div>
       </div>
+      <div class="floating-card" id="fc-edge">
+        <div class="fc-header">
+          <div class="fc-name" id="fc-edge-name"></div>
+        </div>
+        <div class="fc-edge-value" id="fc-edge-value"></div>
+        <div class="fc-edge-stats" id="fc-edge-stats"></div>
+      </div>
     </div>
 
     <div id="sidebar-right">
       <div id="stats-panel">
         <div id="stats-panel-body"></div>
-      </div>
-      <div id="info-panel">
-        <p>Details</p>
-        <div id="info-content">Select an asset to explore.</div>
-      </div>
-      <div id="reset-wrap">
-        <button id="reset-btn" type="button">
-          <i class="ti ti-refresh" style="font-size:13px;vertical-align:-1px;margin-right:5px"></i>Reset graph
-        </button>
       </div>
     </div>
 
@@ -110,9 +111,10 @@
       <div id="chart-tab-indicator"></div>
       <button class="chart-tab active" data-chart="vol">Realised Vol</button>
       <button class="chart-tab" data-chart="corr">Correlation</button>
+      <button class="chart-tab" data-chart="concentration">Concentration</button>
       <button class="chart-tab" data-chart="returns">Returns</button>
       <button class="chart-tab" data-chart="drawdown">Drawdown</button>
-      <button class="chart-tab" data-chart="sharpe">Sharpe</button>
+      <button class="chart-tab" data-chart="sharpe">Risk-Adj.</button>
     </div>
     <div id="chart-toggles"></div>
     <div id="drawdown-threshold-wrap" class="chart-control-row">
@@ -138,6 +140,14 @@
       <div class="corr-window-toggle">
         <button type="button" class="corr-window-btn active" data-window="full">Full sample</button>
         <button type="button" class="corr-window-btn" data-window="90d">90D rolling</button>
+      </div>
+    </div>
+    <div id="ratio-toggle-wrap" class="chart-control-row">
+      <div class="corr-window-toggle">
+        <button type="button" class="ratio-btn active" data-ratio="sharpe">Sharpe</button>
+        <button type="button" class="ratio-btn" data-ratio="sortino">Sortino</button>
+        <button type="button" class="ratio-btn" data-ratio="calmar">Calmar</button>
+        <button type="button" class="ratio-btn" data-ratio="ir">Info Ratio</button>
       </div>
     </div>
     <div id="chart-area">

@@ -422,44 +422,32 @@ function clearLegendActive() {
   document.querySelectorAll(".legend-item.active").forEach(el => el.classList.remove("active"));
 }
 
-export function resetInfoPanel() {
-  document.getElementById("info-content").textContent = "Select an asset to explore.";
+export function hideEdgeCard(app) {
+  app.selectedEdge = null;
+  document.getElementById("fc-edge").classList.remove("visible");
 }
 
-export function updateInfoPanel(data, node, app) {
-  const edges = node.connectedEdges();
-  let correlationRows = "";
-  edges.forEach(edge => {
-    const otherId = edge.source().id() === data.id
-      ? edge.target().id()
-      : edge.source().id();
-    const otherNode = app.cy.getElementById(otherId);
-    const otherName = otherNode.data("label");
-    const corr = edge.data("correlation");
-    const sign = corr >= 0 ? "+" : "";
-    correlationRows += `
-      <div style="display:flex;justify-content:space-between;padding:2px 0;font-size:11px;">
-        <span style="color:#666">${otherName}</span>
-        <span style="font-weight:600;color:${corr >= 0 ? "#1a1a1a" : "#a8391f"}">${sign}${corr.toFixed(2)}</span>
-      </div>`;
-  });
-
-  const weight = (app.weights && app.weights[data.id]) || 0;
-  const dollarAmount = (app.portfolioValue || 0) * weight;
-
-  document.getElementById("info-content").innerHTML = `
-    <strong style="font-size:13px">${data.label}</strong><br>
-    <span style="font-size:11px;color:#888">${data.assetClass} · ${data.paradigm}</span>
-    <div style="margin-top:8px;font-size:13px;font-weight:700;color:#1a1a1a">${formatDollars(dollarAmount)}</div>
-    <div style="font-size:11px;color:#888">${(weight * 100).toFixed(1)}% allocation</div>
-    <div style="margin-top:10px;border-top:1px solid #e8e8e0;padding-top:8px">
-      <div style="font-size:10px;color:#aaa;margin-bottom:4px">Correlations</div>
-      ${correlationRows}
-    </div>
-  `;
+export function positionCardForEdge(app, edge) {
+  if (!edge) return;
+  const wrap = document.getElementById("cy-wrap");
+  const card = document.getElementById("fc-edge");
+  if (!card.classList.contains("visible")) return;
+  const mid = edge.midpoint();
+  const zoom = app.cy.zoom();
+  const pan = app.cy.pan();
+  const pos = { x: mid.x * zoom + pan.x, y: mid.y * zoom + pan.y };
+  const wrapRect = wrap.getBoundingClientRect();
+  const cardRect = card.getBoundingClientRect();
+  const margin = 16;
+  let left = pos.x + margin;
+  let top = pos.y + margin;
+  if (left + cardRect.width + margin > wrapRect.width) left = pos.x - cardRect.width - margin;
+  if (top + cardRect.height + margin > wrapRect.height) top = pos.y - cardRect.height - margin;
+  card.style.left = `${Math.max(margin, left)}px`;
+  card.style.top = `${Math.max(margin, top)}px`;
 }
 
-export function updateEdgeInfoPanel(edge, app) {
+export function showEdgeCard(edge, app) {
   const corr = edge.data("correlation");
   const source = edge.source().data("label");
   const target = edge.target().data("label");
@@ -474,39 +462,23 @@ export function updateEdgeInfoPanel(edge, app) {
 
   const drift = Number.isFinite(rolling) ? rolling - corr : NaN;
   const driftRow = Number.isFinite(rolling)
-    ? `<div style="display:flex;justify-content:space-between;padding:2px 0">
+    ? `<div class="fc-edge-row">
         <span>90D rolling</span>
-        <span style="font-weight:600;color:#1a1a1a">${fmtCi(rolling)}<span style="color:${Math.abs(drift) >= 0.15 ? "#c96a1f" : "#a0a8b0"};font-weight:600;margin-left:6px">${drift >= 0 ? "+" : ""}${drift.toFixed(2)}</span></span>
+        <span class="fc-edge-row-val">${fmtCi(rolling)}<span style="color:${Math.abs(drift) >= 0.15 ? "#c96a1f" : "#a0a8b0"};font-weight:600;margin-left:6px">${drift >= 0 ? "+" : ""}${drift.toFixed(2)}</span></span>
       </div>`
     : "";
 
-  document.getElementById("info-content").innerHTML = `
-    <strong style="font-size:13px">${source} / ${target}</strong>
-    <div style="margin-top:8px">
-      <span style="font-size:22px;font-weight:700;color:${corr >= 0 ? "#1a1a1a" : "#a8391f"}">${sign}${corr.toFixed(2)}</span>
-    </div>
-    <div style="margin-top:10px;border-top:1px solid #e8e8e0;padding-top:8px;font-size:11px;color:#666">
-      ${driftRow}
-      <div style="display:flex;justify-content:space-between;padding:2px 0">
-        <span>n</span><span style="font-weight:600;color:#1a1a1a">${n || "—"}</span>
-      </div>
-      <div style="display:flex;justify-content:space-between;padding:2px 0">
-        <span>95% CI</span><span style="font-weight:600;color:#1a1a1a">[${fmtCi(ciLow)}, ${fmtCi(ciHigh)}]</span>
-      </div>
-      <div style="display:flex;justify-content:space-between;padding:2px 0">
-        <span>p-value (H0: ρ=0)</span><span style="font-weight:600;color:#1a1a1a">${fmtP(pValue)}</span>
-      </div>
-    </div>
+  document.getElementById("fc-edge-name").textContent = `${source} / ${target}`;
+  document.getElementById("fc-edge-value").innerHTML =
+    `<span style="color:${corr >= 0 ? "#1a1a1a" : "#a8391f"}">${sign}${corr.toFixed(2)}</span>`;
+  document.getElementById("fc-edge-stats").innerHTML = `
+    ${driftRow}
+    <div class="fc-edge-row"><span>n</span><span class="fc-edge-row-val">${n || "—"}</span></div>
+    <div class="fc-edge-row"><span>95% CI</span><span class="fc-edge-row-val">[${fmtCi(ciLow)}, ${fmtCi(ciHigh)}]</span></div>
+    <div class="fc-edge-row"><span>p-value (H0: ρ=0)</span><span class="fc-edge-row-val">${fmtP(pValue)}</span></div>
   `;
-}
-
-export function updateSearchInfo(rawQuery, resultCount) {
-  if (resultCount === 0) {
-    document.getElementById("info-content").textContent = `No asset found for "${rawQuery}".`;
-    return;
-  }
-  document.getElementById("info-content").textContent =
-    `${resultCount} asset${resultCount === 1 ? "" : "s"} found. Press Enter to fit.`;
+  document.getElementById("fc-edge").classList.add("visible");
+  positionCardForEdge(app, edge);
 }
 
 export function hideCard(app) {
@@ -520,7 +492,7 @@ export function resetView(app) {
   clearFilterClasses(app);
   clearSelectionClasses(app);
   hideCard(app);
-  resetInfoPanel();
+  hideEdgeCard(app);
   clearLegendActive();
   app.cy.animate({ fit: { padding: 40 }, duration: 400, easing: "ease-in-out" });
 }
@@ -531,7 +503,7 @@ export function setClassFilter(app, group, item) {
   clearFilterClasses(app);
   clearSelectionClasses(app);
   hideCard(app);
-  resetInfoPanel();
+  hideEdgeCard(app);
   clearLegendActive();
 
   if (group === null) return;
@@ -561,6 +533,7 @@ export function switchToAllNodesWithoutClearingSearch(app) {
   clearFilterClasses(app);
   clearSelectionClasses(app);
   hideCard(app);
+  hideEdgeCard(app);
   clearLegendActive();
 }
 
@@ -812,6 +785,13 @@ export function buildStatsPanel(stats) {
           chartTab: "sharpe",
         },
         {
+          label: "Calmar ratio",
+          value: fmtRatio(stats.calmar),
+          color: color(Number.isFinite(stats.calmar) ? stats.calmar - 1 : NaN),
+          tooltip: "CAGR / |Max Drawdown|. Return per unit of the worst pain actually experienced, not volatility.",
+          chartTab: "drawdown",
+        },
+        {
           label: "PSR",
           value: Number.isFinite(stats.psr) ? (stats.psr * 100).toFixed(1) + "%" : "—",
           color: Number.isFinite(stats.psr)
@@ -824,7 +804,6 @@ export function buildStatsPanel(stats) {
           value: fmtRatio(stats.informationRatio),
           color: color(stats.informationRatio),
           tooltip: "Excess annualised return over the S&P 500 (US Large-Cap Equity ETF) per unit of tracking error.",
-          wide: true,
         },
       ],
     },
