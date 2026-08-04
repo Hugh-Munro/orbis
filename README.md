@@ -1,5 +1,7 @@
 # orbis
-Orbis is a portfolio visualisation tool designed to help understand the relationship between assets within in investment portfolio beyond typical correlations. It features a selectable investable universe, set and custom allocation methods as well as performance, distributional and risk measures. Time-series analyis of volatility, drawdowns, correlation, and risk-adjusted measures can also be viewed in chart tab.
+Orbis is a portfolio construction tool designed to visualise the relationship between assets in an portfolio using an interactive network graph. This exposes diversification, clustering and concentration risk that correlation matrices alone tend to obscure.
+
+<br>
 
 <p align="center">
   <img
@@ -26,3 +28,5 @@ Orbis is a portfolio visualisation tool designed to help understand the relation
 <p align="center">
   <em>Orbis chart view preview</em>
 </p>
+
+It features a selectable investable universe, set and custom allocation methods as well as performance, distributional and risk measures. Time-series analyes of volatility, drawdowns, correlation, and risk-adjusted measures can also be viewed in the chart tab.
