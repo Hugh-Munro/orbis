@@ -1,5 +1,6 @@
 # Orbis
-Portfolio construction tool visualising the relationship between assets in an portfolio using an interactive network graph. 
+Portfolio construction tool visualising the relationship between assets in an portfolio using an interactive network graph.
+* Note that UI was created using Claude
 
 <br>
 
