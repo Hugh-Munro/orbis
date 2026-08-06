@@ -1,6 +1,7 @@
 # Orbis
 Portfolio construction tool visualising the relationship between assets in an portfolio using an interactive network graph.
-* Note that UI was created using Claude
+* Backend built independently
+* UI was created using Claude
 
 <br>
 
@@ -30,4 +31,4 @@ Portfolio construction tool visualising the relationship between assets in an po
   <em>Orbis chart view preview</em>
 </p>
 
-It features a selectable investable universe, set and custom allocation methods as well as performance, distributional and risk measures. Time-series analyes of volatility, drawdowns, correlation, and risk-adjusted measures can also be viewed in the chart tab.
+Selectable investable universe, set and custom allocation methods as well as performance, distributional and risk measures. Time-series analyes of volatility, drawdowns, correlation, and risk-adjusted measures can also be viewed in the chart tab.
