@@ -1,7 +1,7 @@
 # Orbis
 Portfolio construction tool visualising the relationship between assets in an portfolio using an interactive network graph.
 * Backend built independently
-* UI was created using Claude
+* Frontend was created using Claude
 
 <br>
 
