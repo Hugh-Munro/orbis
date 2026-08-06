@@ -1,5 +1,5 @@
 # Orbis
-Orbis is a portfolio construction tool designed to visualise the relationship between assets in an portfolio using an interactive network graph. This exposes diversification, clustering and concentration risk that correlation matrices alone tend to obscure.
+Portfolio construction tool visualising the relationship between assets in an portfolio using an interactive network graph. 
 
 <br>
 
